@@ -102,6 +102,24 @@ export default function ArchiveChatPage() {
     return new Date(messages[i - 1].created_at).toDateString() !== new Date(messages[i].created_at).toDateString();
   }
 
+  // Auto-detect and render URLs as clickable links
+  function renderTextWithLinks(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+      if (urlRegex.test(part)) {
+        return (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+            style={{ color: '#93c5fd', textDecoration: 'underline', wordBreak: 'break-all' }}
+            onClick={(e) => e.stopPropagation()}>
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  }
+
   if (loading) return <div className="loading-screen"><div className="spinner large"></div></div>;
 
   return (
@@ -145,7 +163,7 @@ export default function ArchiveChatPage() {
               {showDateSep(i) && <div className="date-separator"><span>{formatDateSep(msg.created_at)}</span></div>}
               <div className="message-bubble">
                 <div className="message-content">
-                  <p>{msg.content}</p>
+                  <p>{renderTextWithLinks(msg.content)}</p>
                   <div className="message-meta">
                     <span className="message-time">{formatTime(msg.created_at)}</span>
                     <button className="btn-delete-msg" onClick={() => requestDeleteMessage(msg.id)} title="Hapus">
