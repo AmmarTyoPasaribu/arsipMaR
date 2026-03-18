@@ -12,195 +12,171 @@ export default function ArchiveChatPage() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState(null);
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const textareaRef = useRef(null);
   const router = useRouter();
   const params = useParams();
   const archiveId = params.id;
 
+  function showToastConfirm(message, onConfirm) {
+    setToast({ message, onConfirm });
+  }
+  function dismissToast() { setToast(null); }
+  function handleToastConfirm() {
+    if (toast?.onConfirm) toast.onConfirm();
+    setToast(null);
+  }
+
   useEffect(() => {
     const decoded = getUserFromToken();
-    if (!decoded) {
-      router.push('/');
-      return;
-    }
+    if (!decoded) { router.push('/'); return; }
     setUser(decoded);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    if (user && archiveId) {
-      fetchArchive();
-      fetchMessages();
-    }
+    if (user && archiveId) { fetchArchive(); fetchMessages(); }
   }, [user, archiveId]);
 
+  useEffect(() => { scrollToBottom(); }, [messages]);
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+    }
+  }, [newMessage]);
 
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }
 
   async function fetchArchive() {
-    const { data, error } = await supabase
-      .from('archives')
-      .select('*')
-      .eq('id', archiveId)
-      .eq('user_id', user.id)
-      .single();
-    if (error || !data) {
-      router.push('/dashboard');
-      return;
-    }
+    const { data } = await supabase
+      .from('archives').select('*').eq('id', archiveId).eq('user_id', user.id).single();
+    if (!data) { router.push('/dashboard'); return; }
     setArchive(data);
   }
 
   async function fetchMessages() {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('archive_id', archiveId)
-      .eq('user_id', user.id)
+    const { data } = await supabase
+      .from('messages').select('*').eq('archive_id', archiveId).eq('user_id', user.id)
       .order('created_at', { ascending: true });
-    if (!error) setMessages(data || []);
+    setMessages(data || []);
   }
 
   async function sendMessage(e) {
-    e.preventDefault();
+    e?.preventDefault();
     if (!newMessage.trim()) return;
     setSending(true);
-
     const { error } = await supabase.from('messages').insert({
-      archive_id: archiveId,
-      user_id: user.id,
-      content: newMessage.trim(),
+      archive_id: archiveId, user_id: user.id, content: newMessage.trim(),
     });
-
-    if (!error) {
-      setNewMessage('');
-      fetchMessages();
-      inputRef.current?.focus();
-    }
+    if (!error) { setNewMessage(''); fetchMessages(); }
     setSending(false);
   }
 
-  async function deleteMessage(id) {
-    await supabase.from('messages').delete().eq('id', id);
-    fetchMessages();
-  }
-
-  function formatTime(dateStr) {
-    return new Date(dateStr).toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
+  function requestDeleteMessage(msgId) {
+    showToastConfirm('Hapus pesan ini?', async () => {
+      await supabase.from('messages').delete().eq('id', msgId);
+      fetchMessages();
     });
   }
 
-  function formatDateSeparator(dateStr) {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  function formatTime(d) {
+    return new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  }
 
+  function formatDateSep(d) {
+    const date = new Date(d);
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
     if (date.toDateString() === today.toDateString()) return 'Hari Ini';
     if (date.toDateString() === yesterday.toDateString()) return 'Kemarin';
-    return date.toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
+    return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
-  function shouldShowDateSeparator(index) {
-    if (index === 0) return true;
-    const prevDate = new Date(messages[index - 1].created_at).toDateString();
-    const currDate = new Date(messages[index].created_at).toDateString();
-    return prevDate !== currDate;
+  function showDateSep(i) {
+    if (i === 0) return true;
+    return new Date(messages[i - 1].created_at).toDateString() !== new Date(messages[i].created_at).toDateString();
   }
 
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner large"></div>
-      </div>
-    );
-  }
+  if (loading) return <div className="loading-screen"><div className="spinner large"></div></div>;
 
   return (
     <div className="chat-container">
-      {/* Chat Header */}
+      {/* Toast */}
+      {toast && (
+        <div className="toast-container">
+          <div className="toast-confirm">
+            <span className="toast-text">{toast.message}</span>
+            <div className="toast-actions">
+              <button className="toast-btn-yes" onClick={handleToastConfirm}>Hapus</button>
+              <button className="toast-btn-no" onClick={dismissToast}>Batal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="chat-header">
-        <button onClick={() => router.push('/dashboard')} className="btn-back" id="back-btn">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button onClick={() => router.push('/dashboard')} className="btn-back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
         <div className="chat-header-info">
-          <h2>{archive?.title || 'Loading...'}</h2>
+          <h2>{archive?.title || '...'}</h2>
           <span className="message-count">{messages.length} pesan</span>
         </div>
       </header>
 
-      {/* Messages Area */}
-      <div className="messages-area" id="messages-area">
+      <div className="messages-area">
         {messages.length === 0 ? (
           <div className="empty-chat">
-            <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" opacity="0.2">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25">
               <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
             </svg>
             <p>Belum ada pesan. Mulai menulis!</p>
           </div>
         ) : (
-          messages.map((msg, index) => (
+          messages.map((msg, i) => (
             <div key={msg.id}>
-              {shouldShowDateSeparator(index) && (
-                <div className="date-separator">
-                  <span>{formatDateSeparator(msg.created_at)}</span>
-                </div>
-              )}
-              <div className="message-bubble" id={`msg-${msg.id}`}>
+              {showDateSep(i) && <div className="date-separator"><span>{formatDateSep(msg.created_at)}</span></div>}
+              <div className="message-bubble">
                 <div className="message-content">
                   <p>{msg.content}</p>
                   <div className="message-meta">
                     <span className="message-time">{formatTime(msg.created_at)}</span>
-                    <button
-                      className="btn-delete-msg"
-                      onClick={() => deleteMessage(msg.id)}
-                      title="Hapus pesan"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <button className="btn-delete-msg" onClick={() => requestDeleteMessage(msg.id)} title="Hapus">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
                       </svg>
                     </button>
                   </div>
                 </div>
-                <div ref={index === messages.length - 1 ? messagesEndRef : null} />
               </div>
+              {i === messages.length - 1 && <div ref={messagesEndRef} />}
             </div>
           ))
         )}
       </div>
 
-      {/* Input Bar */}
-      <form onSubmit={sendMessage} className="chat-input-bar" id="chat-input-bar">
-        <input
-          ref={inputRef}
-          type="text"
+      <form onSubmit={sendMessage} className="chat-input-bar">
+        <textarea
+          ref={textareaRef}
           placeholder="Ketik pesan..."
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          className="chat-input"
-          id="chat-input"
-          autoFocus
+          className="chat-textarea"
+          rows={1}
         />
-        <button type="submit" className="btn-send" disabled={sending || !newMessage.trim()} id="send-btn">
+        <button type="submit" className="btn-send" disabled={sending || !newMessage.trim()}>
           {sending ? (
             <span className="spinner small"></span>
           ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="22" y1="2" x2="11" y2="13"/>
               <polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>

@@ -46,18 +46,7 @@ export default function LoginPage() {
       <div className="login-card">
         <div className="login-header">
           <div className="login-logo">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <rect width="48" height="48" rx="12" fill="url(#grad1)" />
-              <path d="M14 34V18L24 12L34 18V34" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M20 34V26H28V34" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="24" cy="21" r="3" stroke="white" strokeWidth="2"/>
-              <defs>
-                <linearGradient id="grad1" x1="0" y1="0" x2="48" y2="48">
-                  <stop stopColor="#6366f1"/>
-                  <stop offset="1" stopColor="#8b5cf6"/>
-                </linearGradient>
-              </defs>
-            </svg>
+            <img src="/logo.svg" alt="ArsipMaR" width="56" height="56" />
           </div>
           <h1>ArsipMaR</h1>
           <p className="login-subtitle">Personal Archive & Chat</p>
