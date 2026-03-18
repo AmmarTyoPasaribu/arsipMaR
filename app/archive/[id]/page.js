@@ -13,20 +13,21 @@ export default function ArchiveChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesAreaRef = useRef(null);
   const textareaRef = useRef(null);
   const router = useRouter();
   const params = useParams();
   const archiveId = params.id;
 
-  function showToastConfirm(message, onConfirm) {
-    setToast({ message, onConfirm });
+  function showToastConfirm(message, onConfirm) { setToast({ type: 'confirm', message, onConfirm }); }
+  function showToastInfo(message) {
+    setToast({ type: 'info', message });
+    setTimeout(() => setToast(null), 2000);
   }
   function dismissToast() { setToast(null); }
-  function handleToastConfirm() {
-    if (toast?.onConfirm) toast.onConfirm();
-    setToast(null);
-  }
+  function handleToastConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
 
   useEffect(() => {
     const decoded = getUserFromToken();
@@ -47,6 +48,18 @@ export default function ArchiveChatPage() {
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
     }
   }, [newMessage]);
+
+  // Scroll detection for scroll-to-bottom button
+  useEffect(() => {
+    const area = messagesAreaRef.current;
+    if (!area) return;
+    function handleScroll() {
+      const distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
+      setShowScrollBtn(distFromBottom > 200);
+    }
+    area.addEventListener('scroll', handleScroll);
+    return () => area.removeEventListener('scroll', handleScroll);
+  }, [messages]);
 
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,6 +97,46 @@ export default function ArchiveChatPage() {
     });
   }
 
+  // Export chat
+  function exportChat(format) {
+    if (!archive || messages.length === 0) return;
+
+    let content, filename, type;
+
+    if (format === 'json') {
+      content = JSON.stringify({
+        archive: archive.title,
+        exported_at: new Date().toISOString(),
+        messages: messages.map(m => ({
+          content: m.content,
+          timestamp: m.created_at,
+        })),
+      }, null, 2);
+      filename = `${archive.title}.json`;
+      type = 'application/json';
+    } else {
+      const lines = [`=== ${archive.title} ===`, `Exported: ${new Date().toLocaleString('id-ID')}`, `Total: ${messages.length} pesan`, ''];
+      let lastDate = '';
+      messages.forEach(m => {
+        const date = new Date(m.created_at);
+        const dateStr = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+        if (dateStr !== lastDate) { lines.push(`--- ${dateStr} ---`); lastDate = dateStr; }
+        const time = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        lines.push(`[${time}] ${m.content}`);
+      });
+      content = lines.join('\n');
+      filename = `${archive.title}.txt`;
+      type = 'text/plain';
+    }
+
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+    showToastInfo(`Exported sebagai ${format.toUpperCase()}`);
+  }
+
   function formatTime(d) {
     return new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   }
@@ -102,7 +155,6 @@ export default function ArchiveChatPage() {
     return new Date(messages[i - 1].created_at).toDateString() !== new Date(messages[i].created_at).toDateString();
   }
 
-  // Auto-detect and render URLs as clickable links
   function renderTextWithLinks(text) {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = text.split(urlRegex);
@@ -127,13 +179,19 @@ export default function ArchiveChatPage() {
       {/* Toast */}
       {toast && (
         <div className="toast-container">
-          <div className="toast-confirm">
-            <span className="toast-text">{toast.message}</span>
-            <div className="toast-actions">
-              <button className="toast-btn-yes" onClick={handleToastConfirm}>Hapus</button>
-              <button className="toast-btn-no" onClick={dismissToast}>Batal</button>
+          {toast.type === 'confirm' ? (
+            <div className="toast-confirm">
+              <span className="toast-text">{toast.message}</span>
+              <div className="toast-actions">
+                <button className="toast-btn-yes" onClick={handleToastConfirm}>Hapus</button>
+                <button className="toast-btn-no" onClick={dismissToast}>Batal</button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="toast">
+              <span className="toast-text">{toast.message}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -147,9 +205,30 @@ export default function ArchiveChatPage() {
           <h2>{archive?.title || '...'}</h2>
           <span className="message-count">{messages.length} pesan</span>
         </div>
+        {/* Export Buttons */}
+        {messages.length > 0 && (
+          <div className="export-btns">
+            <button className="btn-export" onClick={() => exportChat('txt')} title="Export .txt">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              .txt
+            </button>
+            <button className="btn-export" onClick={() => exportChat('json')} title="Export .json">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              .json
+            </button>
+          </div>
+        )}
       </header>
 
-      <div className="messages-area">
+      <div className="messages-area" ref={messagesAreaRef}>
         {messages.length === 0 ? (
           <div className="empty-chat">
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25">
@@ -180,6 +259,15 @@ export default function ArchiveChatPage() {
           ))
         )}
       </div>
+
+      {/* Scroll to Bottom */}
+      {showScrollBtn && (
+        <button className="btn-scroll-bottom" onClick={scrollToBottom}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      )}
 
       <form onSubmit={sendMessage} className="chat-input-bar">
         <textarea

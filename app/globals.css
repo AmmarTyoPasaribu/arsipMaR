@@ -51,6 +51,38 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Light Theme */
+[data-theme="light"] {
+  --bg-body: #f5f5f7;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8f8fc;
+  --bg-input: #f2f2f5;
+  --bg-hover: #eeeef2;
+
+  --accent: #4f46e5;
+  --accent-light: #6366f1;
+  --accent-bg: rgba(79, 70, 229, 0.08);
+  --accent-bg-hover: rgba(79, 70, 229, 0.14);
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+
+  --border: #e5e5ea;
+  --border-light: #f0f0f3;
+
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --success: #16a34a;
+  --warning: #d97706;
+
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.07);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.1);
+}
+
 html, body {
   height: 100%;
   background: var(--bg-body);
@@ -1078,6 +1110,153 @@ html, body {
 .btn-send:hover:not(:disabled) { background: var(--accent-light); }
 .btn-send:active:not(:disabled) { transform: scale(0.93); }
 .btn-send:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ============================================
+   Search Bar
+   ============================================ */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  margin-bottom: 10px;
+  transition: all 0.2s var(--ease);
+}
+
+.search-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.search-icon { color: var(--text-muted); flex-shrink: 0; }
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+}
+
+.search-input::placeholder { color: var(--text-muted); }
+
+.search-clear {
+  background: var(--bg-hover);
+  border: none;
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.search-clear:hover { color: var(--text-primary); }
+
+/* ============================================
+   Header Right
+   ============================================ */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================
+   Theme Toggle
+   ============================================ */
+.btn-theme {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+
+.btn-theme:hover { color: var(--accent-light); border-color: var(--accent); }
+
+/* ============================================
+   Copy Badge
+   ============================================ */
+.copied-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: var(--success);
+  color: white;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: 700;
+  animation: fadeIn 0.2s var(--ease);
+}
+
+/* ============================================
+   Export Buttons
+   ============================================ */
+.export-btns {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-export {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: var(--accent-bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--accent-light);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  font-family: inherit;
+}
+
+.btn-export:hover { background: var(--accent-bg-hover); }
+
+/* ============================================
+   Scroll to Bottom
+   ============================================ */
+.btn-scroll-bottom {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: all 0.2s var(--ease);
+  animation: fadeUp 0.2s var(--ease);
+  z-index: 50;
+}
+
+.btn-scroll-bottom:hover { background: var(--accent-light); transform: scale(1.05); }
 
 /* ============================================
    Responsive
