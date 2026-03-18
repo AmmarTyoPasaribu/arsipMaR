@@ -838,6 +838,99 @@ html, body {
 }
 
 /* ============================================
+   Drive Usage
+   ============================================ */
+.drive-usage {
+  margin-top: 6px;
+}
+
+.drive-bar-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.drive-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+}
+
+.drive-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 3px;
+}
+
+.drive-text {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.drive-percent {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.drive-edit {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.drive-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  max-width: 100px;
+}
+
+.drive-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.btn-drive-save {
+  padding: 4px 10px;
+  background: var(--accent-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-drive-save:hover {
+  opacity: 0.8;
+}
+
+.btn-drive-edit {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+  margin-top: 2px;
+  transition: var(--transition);
+  font-family: inherit;
+}
+
+.btn-drive-edit:hover {
+  color: var(--accent-primary);
+}
+
+/* ============================================
    Chat Room
    ============================================ */
 .chat-container {

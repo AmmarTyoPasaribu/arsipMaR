@@ -16,6 +16,8 @@ export default function DashboardPage() {
   const [newTag, setNewTag] = useState('');
   const [selectedTagFilter, setSelectedTagFilter] = useState('all');
   const [assigningEmail, setAssigningEmail] = useState(null);
+  const [editingDrive, setEditingDrive] = useState(null);
+  const [driveInput, setDriveInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const router = useRouter();
@@ -136,6 +138,16 @@ export default function DashboardPage() {
     fetchEmails();
   }
 
+  async function updateDriveUsage(emailId) {
+    // Parse input: accept both comma and dot as decimal
+    const parsed = parseFloat(driveInput.replace(',', '.'));
+    const value = isNaN(parsed) ? 0 : Math.max(0, Math.min(parsed, 15));
+    await supabase.from('emails').update({ drive_usage: value }).eq('id', emailId);
+    setEditingDrive(null);
+    setDriveInput('');
+    fetchEmails();
+  }
+
   function handleLogout() {
     removeToken();
     router.push('/');
@@ -149,6 +161,23 @@ export default function DashboardPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  }
+
+  function formatGB(value) {
+    if (!value || value === 0) return '0';
+    return value.toFixed(1).replace('.', ',');
+  }
+
+  function getDrivePercent(value) {
+    if (!value || value === 0) return 0;
+    return Math.min((value / 15) * 100, 100);
+  }
+
+  function getDriveColor(percent) {
+    if (percent >= 90) return '#ef4444';
+    if (percent >= 70) return '#f59e0b';
+    if (percent >= 50) return '#eab308';
+    return '#22c55e';
   }
 
   const filteredEmails = selectedTagFilter === 'all'
@@ -351,11 +380,14 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 filteredEmails.map((item, index) => {
-                  const globalIndex = emails.findIndex(e => e.id === item.id) + 1;
+                  const listNum = index + 1;
+                  const drivePercent = getDrivePercent(item.drive_usage);
+                  const driveColor = getDriveColor(drivePercent);
+
                   return (
                     <div key={item.id} className="card email-card" id={`email-${item.id}`}>
-                      {/* Email Number */}
-                      <div className="email-number">#{globalIndex}</div>
+                      {/* List Number (resets per filtered view) */}
+                      <div className="email-number">#{listNum}</div>
 
                       <div className="card-icon email-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -373,6 +405,55 @@ export default function DashboardPage() {
                             <span className="email-tag-badge untagged">Tanpa Tag</span>
                           )}
                           <span className="card-date">{formatDate(item.created_at)}</span>
+                        </div>
+
+                        {/* Drive Usage Bar */}
+                        <div className="drive-usage">
+                          <div className="drive-bar-container">
+                            <div
+                              className="drive-bar-fill"
+                              style={{ width: `${drivePercent}%`, backgroundColor: driveColor }}
+                            />
+                          </div>
+                          <div className="drive-info">
+                            <span className="drive-text" style={{ color: driveColor }}>
+                              {formatGB(item.drive_usage)} / 15 GB
+                            </span>
+                            <span className="drive-percent" style={{ color: driveColor }}>
+                              {drivePercent.toFixed(1)}%
+                            </span>
+                          </div>
+                          {editingDrive === item.id ? (
+                            <div className="drive-edit">
+                              <input
+                                type="text"
+                                className="drive-input"
+                                placeholder="misal: 12,3"
+                                value={driveInput}
+                                onChange={(e) => setDriveInput(e.target.value)}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') updateDriveUsage(item.id);
+                                  if (e.key === 'Escape') { setEditingDrive(null); setDriveInput(''); }
+                                }}
+                              />
+                              <button
+                                className="btn-drive-save"
+                                onClick={() => updateDriveUsage(item.id)}
+                              >✓</button>
+                            </div>
+                          ) : (
+                            <button
+                              className="btn-drive-edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingDrive(item.id);
+                                setDriveInput(item.drive_usage ? formatGB(item.drive_usage) : '');
+                              }}
+                            >
+                              ✏️ Update Drive
+                            </button>
+                          )}
                         </div>
                       </div>
 
