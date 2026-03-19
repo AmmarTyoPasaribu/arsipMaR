@@ -27,6 +27,11 @@ export default function DashboardPage() {
   const [successMsg, setSuccessMsg] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
+  // Info tab
+  const [editingPayment, setEditingPayment] = useState(null);
+  const [paymentInput, setPaymentInput] = useState('');
+  const [editingRecovery, setEditingRecovery] = useState(null);
+  const [recoveryInput, setRecoveryInput] = useState('');
   const router = useRouter();
 
   // Modal confirm
@@ -34,16 +39,8 @@ export default function DashboardPage() {
     setToast({ title, desc, onConfirm, isLogout: !!isLogout });
   }
   function dismissConfirm() { setToast(null); }
-  function handleConfirm() {
-    if (toast?.onConfirm) toast.onConfirm();
-    setToast(null);
-  }
-
-  // Success toast
-  function showSuccess(msg) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  }
+  function handleConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
+  function showSuccess(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3000); }
 
   useEffect(() => {
     const saved = localStorage.getItem('arsipmar-theme');
@@ -70,7 +67,7 @@ export default function DashboardPage() {
     setArchives(data || []);
   }
   async function fetchEmails() {
-    const { data } = await supabase.from('emails').select('*, tags(id, name)').eq('user_id', user.id).order('created_at', { ascending: false });
+    const { data } = await supabase.from('emails').select('*, tags(id, name)').eq('user_id', user.id).order('sort_order', { ascending: true });
     setEmails(data || []);
   }
   async function fetchTags() {
@@ -83,6 +80,7 @@ export default function DashboardPage() {
     setCreating(true);
     await supabase.from('archives').insert({ title: newArchiveTitle.trim(), user_id: user.id });
     setNewArchiveTitle(''); fetchArchives(); setCreating(false);
+    showSuccess('Arsip berhasil dibuat');
   }
 
   function requestDeleteArchive(e, id) {
@@ -90,24 +88,25 @@ export default function DashboardPage() {
     showConfirm('Hapus Arsip?', 'Arsip beserta semua pesannya akan dihapus permanen.', async () => {
       await supabase.from('messages').delete().eq('archive_id', id);
       await supabase.from('archives').delete().eq('id', id);
-      fetchArchives();
-      showSuccess('Arsip berhasil dihapus');
+      fetchArchives(); showSuccess('Arsip berhasil dihapus');
     });
   }
 
   async function addEmail(e) {
     e.preventDefault(); if (!newEmail.trim()) return;
     setCreating(true);
-    await supabase.from('emails').insert({ email: newEmail.trim(), user_id: user.id });
+    // Get max sort_order
+    const maxOrder = emails.length > 0 ? Math.max(...emails.map(e => e.sort_order || 0)) : 0;
+    await supabase.from('emails').insert({ email: newEmail.trim(), user_id: user.id, sort_order: maxOrder + 1 });
     setNewEmail(''); fetchEmails(); setCreating(false);
+    showSuccess('Email berhasil ditambahkan');
   }
 
   function requestDeleteEmail(e, id) {
     e.stopPropagation();
     showConfirm('Hapus Email?', 'Email ini akan dihapus permanen dari daftar.', async () => {
       await supabase.from('emails').delete().eq('id', id);
-      fetchEmails();
-      showSuccess('Email berhasil dihapus');
+      fetchEmails(); showSuccess('Email berhasil dihapus');
     });
   }
 
@@ -122,8 +121,7 @@ export default function DashboardPage() {
     e.stopPropagation();
     showConfirm('Hapus Tag?', 'Tag ini akan dihapus dan email terkait akan kehilangan tag.', async () => {
       await supabase.from('tags').delete().eq('id', id);
-      fetchTags(); fetchEmails();
-      showSuccess('Tag berhasil dihapus');
+      fetchTags(); fetchEmails(); showSuccess('Tag berhasil dihapus');
     });
   }
 
@@ -137,12 +135,40 @@ export default function DashboardPage() {
     const value = isNaN(parsed) ? 0 : Math.max(0, Math.min(parsed, 15));
     await supabase.from('emails').update({ drive_usage: value }).eq('id', emailId);
     setEditingDrive(null); setDriveInput(''); fetchEmails();
+    showSuccess('Drive usage diperbarui');
+  }
+
+  // Reorder email
+  async function moveEmail(index, direction) {
+    const list = [...filteredEmails];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    // Swap sort_order
+    const a = list[index];
+    const b = list[targetIndex];
+    await supabase.from('emails').update({ sort_order: b.sort_order }).eq('id', a.id);
+    await supabase.from('emails').update({ sort_order: a.sort_order }).eq('id', b.id);
+    fetchEmails();
+  }
+
+  // Info tab: update payment
+  async function savePayment(emailId) {
+    await supabase.from('emails').update({ payment: paymentInput.trim() }).eq('id', emailId);
+    setEditingPayment(null); setPaymentInput(''); fetchEmails();
+    showSuccess('Payment diperbarui');
+  }
+
+  // Info tab: update recovery email
+  async function saveRecovery(emailId) {
+    await supabase.from('emails').update({ recovery_email: recoveryInput.trim() }).eq('id', emailId);
+    setEditingRecovery(null); setRecoveryInput(''); fetchEmails();
+    showSuccess('Email pemulihan diperbarui');
   }
 
   function copyEmail(emailText) {
     navigator.clipboard.writeText(emailText).then(() => {
-      setCopiedId(emailText);
-      showSuccess('Email berhasil disalin!');
+      setCopiedId(emailText); showSuccess('Email berhasil disalin!');
       setTimeout(() => setCopiedId(null), 2000);
     });
   }
@@ -168,7 +194,7 @@ export default function DashboardPage() {
     let list = selectedTagFilter === 'all' ? emails
       : selectedTagFilter === 'untagged' ? emails.filter(e => !e.tag_id)
       : emails.filter(e => e.tag_id === selectedTagFilter);
-    if (searchQuery.trim() && activeTab === 'email')
+    if (searchQuery.trim() && (activeTab === 'email' || activeTab === 'info'))
       list = list.filter(e => e.email.toLowerCase().includes(searchQuery.toLowerCase()));
     return list;
   })();
@@ -206,7 +232,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Success Toast */}
       {successMsg && (
         <div className="toast-success">
           <span className="toast-success-icon">✓</span>
@@ -263,6 +288,14 @@ export default function DashboardPage() {
             <polyline points="22,6 12,13 2,6"/>
           </svg>
           Email
+        </button>
+        <button className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('info'); setSearchQuery(''); }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          Info
         </button>
       </div>
 
@@ -364,10 +397,12 @@ export default function DashboardPage() {
             <div className="email-table">
               <div className="email-table-header">
                 <span>#</span>
-                <span>Email</span>
-                <span className="th-tag">Tag</span>
-                <span className="th-drive">Drive</span>
-                <span className="th-action">Action</span>
+                <span className="th-center">Email</span>
+                <span className="th-center">Pay</span>
+                <span className="th-center">Cadangkan</span>
+                <span className="th-center">Tag</span>
+                <span className="th-center">Drive</span>
+                <span className="th-center">Action</span>
               </div>
               {filteredEmails.length === 0 ? (
                 <div className="empty-state" style={{ padding: '40px 20px' }}>
@@ -381,6 +416,8 @@ export default function DashboardPage() {
                 const dp = getDrivePercent(item.drive_usage);
                 const dc = getDriveColor(dp);
                 const tc = item.tags ? getTagColor(item.tag_id) : null;
+                const hasPay = !!(item.payment && item.payment.trim());
+                const hasRecovery = !!(item.recovery_email && item.recovery_email.trim());
                 return (
                   <div key={item.id} className="email-row">
                     <span className="email-num">{index + 1}</span>
@@ -390,6 +427,16 @@ export default function DashboardPage() {
                         {copiedId === item.email && <span className="copied-badge">✓</span>}
                       </span>
                       <div className="email-date">{formatDate(item.created_at)}</div>
+                    </div>
+                    <div className="status-cell">
+                      <span className={`status-badge ${hasPay ? 'yes' : 'no'}`}>
+                        {hasPay ? '✓' : '✗'}
+                      </span>
+                    </div>
+                    <div className="status-cell">
+                      <span className={`status-badge ${hasRecovery ? 'yes' : 'no'}`}>
+                        {hasRecovery ? '✓' : '✗'}
+                      </span>
                     </div>
                     <div className="email-tag-cell">
                       {item.tags ? (
@@ -411,6 +458,19 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="email-actions">
+                      {/* Move */}
+                      <button className="action-btn" onClick={(e) => { e.stopPropagation(); moveEmail(index, -1); }}
+                        disabled={index === 0} title="Pindah ke atas">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="18 15 12 9 6 15"/>
+                        </svg>
+                      </button>
+                      <button className="action-btn" onClick={(e) => { e.stopPropagation(); moveEmail(index, 1); }}
+                        disabled={index === filteredEmails.length - 1} title="Pindah ke bawah">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      </button>
                       {/* Tag */}
                       <div className="action-wrapper">
                         <button className={`action-btn ${assigningEmail === item.id ? 'tag-active' : ''}`}
@@ -454,13 +514,13 @@ export default function DashboardPage() {
                       </div>
                       {/* Send */}
                       <a href={`mailto:${item.email}`} className="action-btn" onClick={(e) => e.stopPropagation()} title="Kirim">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
                         </svg>
                       </a>
                       {/* Delete */}
                       <button className="action-btn delete-btn" onClick={(e) => requestDeleteEmail(e, item.id)}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <polyline points="3 6 5 6 21 6"/>
                           <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
                         </svg>
@@ -469,6 +529,74 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* INFO */}
+        {activeTab === 'info' && (
+          <div className="section-content">
+            <div className="search-bar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="search-icon">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" placeholder="Cari email..." value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)} className="search-input"/>
+              {searchQuery && <button className="search-clear" onClick={() => setSearchQuery('')}>×</button>}
+            </div>
+
+            <div className="email-table">
+              <div className="info-table-header">
+                <span>#</span>
+                <span>Email</span>
+                <span className="th-center">Payment</span>
+                <span className="th-center">Email Pemulihan</span>
+              </div>
+              {filteredEmails.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px 20px' }}>
+                  <p>Belum ada email</p>
+                </div>
+              ) : filteredEmails.map((item, index) => (
+                <div key={item.id} className="info-row">
+                  <span className="email-num">{index + 1}</span>
+                  <div className="email-info">
+                    <span className="email-address" onClick={() => copyEmail(item.email)} title="Klik untuk copy">
+                      {item.email}
+                      {copiedId === item.email && <span className="copied-badge">✓</span>}
+                    </span>
+                  </div>
+                  <div className="info-input-cell">
+                    {editingPayment === item.id ? (
+                      <div className="info-edit-row">
+                        <input type="text" className="info-input" value={paymentInput}
+                          onChange={(e) => setPaymentInput(e.target.value)} autoFocus placeholder="Isi payment..."
+                          onKeyDown={(e) => { if (e.key === 'Enter') savePayment(item.id); if (e.key === 'Escape') setEditingPayment(null); }}/>
+                        <button className="drive-save" onClick={() => savePayment(item.id)}>✓</button>
+                        <button className="info-cancel" onClick={() => setEditingPayment(null)}>✗</button>
+                      </div>
+                    ) : (
+                      <span className="info-value" onClick={() => { setEditingPayment(item.id); setPaymentInput(item.payment || ''); setEditingRecovery(null); }}>
+                        {item.payment && item.payment.trim() ? item.payment : <span className="info-empty">— Kosong</span>}
+                      </span>
+                    )}
+                  </div>
+                  <div className="info-input-cell">
+                    {editingRecovery === item.id ? (
+                      <div className="info-edit-row">
+                        <input type="email" className="info-input" value={recoveryInput}
+                          onChange={(e) => setRecoveryInput(e.target.value)} autoFocus placeholder="Email pemulihan..."
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveRecovery(item.id); if (e.key === 'Escape') setEditingRecovery(null); }}/>
+                        <button className="drive-save" onClick={() => saveRecovery(item.id)}>✓</button>
+                        <button className="info-cancel" onClick={() => setEditingRecovery(null)}>✗</button>
+                      </div>
+                    ) : (
+                      <span className="info-value" onClick={() => { setEditingRecovery(item.id); setRecoveryInput(item.recovery_email || ''); setEditingPayment(null); }}>
+                        {item.recovery_email && item.recovery_email.trim() ? item.recovery_email : <span className="info-empty">— Kosong</span>}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
