@@ -326,7 +326,7 @@ export default function DashboardPage() {
                 <span>#</span>
                 <span>Email</span>
                 <span className="th-tag">Tag</span>
-                <span>Drive</span>
+                <span className="th-drive">Drive</span>
                 <span className="th-action">Action</span>
               </div>
               {filteredEmails.length === 0 ? (
