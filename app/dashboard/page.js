@@ -24,14 +24,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
   const router = useRouter();
 
-  function showToastConfirm(msg, onConfirm) { setToast({ type: 'confirm', message: msg, onConfirm }); }
-  function showToastInfo(msg) { setToast({ type: 'info', message: msg }); setTimeout(() => setToast(null), 2000); }
-  function dismissToast() { setToast(null); }
-  function handleToastConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
+  // Modal confirm
+  function showConfirm(title, desc, onConfirm, isLogout) {
+    setToast({ title, desc, onConfirm, isLogout: !!isLogout });
+  }
+  function dismissConfirm() { setToast(null); }
+  function handleConfirm() {
+    if (toast?.onConfirm) toast.onConfirm();
+    setToast(null);
+  }
+
+  // Success toast
+  function showSuccess(msg) {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 3000);
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem('arsipmar-theme');
@@ -75,10 +87,11 @@ export default function DashboardPage() {
 
   function requestDeleteArchive(e, id) {
     e.stopPropagation();
-    showToastConfirm('Hapus arsip ini beserta semua pesannya?', async () => {
+    showConfirm('Hapus Arsip?', 'Arsip beserta semua pesannya akan dihapus permanen.', async () => {
       await supabase.from('messages').delete().eq('archive_id', id);
       await supabase.from('archives').delete().eq('id', id);
       fetchArchives();
+      showSuccess('Arsip berhasil dihapus');
     });
   }
 
@@ -91,9 +104,10 @@ export default function DashboardPage() {
 
   function requestDeleteEmail(e, id) {
     e.stopPropagation();
-    showToastConfirm('Hapus email ini?', async () => {
+    showConfirm('Hapus Email?', 'Email ini akan dihapus permanen dari daftar.', async () => {
       await supabase.from('emails').delete().eq('id', id);
       fetchEmails();
+      showSuccess('Email berhasil dihapus');
     });
   }
 
@@ -106,9 +120,10 @@ export default function DashboardPage() {
 
   function requestDeleteTag(e, id) {
     e.stopPropagation();
-    showToastConfirm('Hapus tag ini?', async () => {
+    showConfirm('Hapus Tag?', 'Tag ini akan dihapus dan email terkait akan kehilangan tag.', async () => {
       await supabase.from('tags').delete().eq('id', id);
       fetchTags(); fetchEmails();
+      showSuccess('Tag berhasil dihapus');
     });
   }
 
@@ -126,13 +141,14 @@ export default function DashboardPage() {
 
   function copyEmail(emailText) {
     navigator.clipboard.writeText(emailText).then(() => {
-      setCopiedId(emailText); showToastInfo('Email disalin!');
+      setCopiedId(emailText);
+      showSuccess('Email berhasil disalin!');
       setTimeout(() => setCopiedId(null), 2000);
     });
   }
 
   function requestLogout() {
-    showToastConfirm('Yakin mau keluar?', () => { removeToken(); router.push('/'); });
+    showConfirm('Keluar dari Akun?', 'Kamu akan keluar dari ArsipMaR.', () => { removeToken(); router.push('/'); }, true);
   }
 
   function getTagColor(tagId) {
@@ -161,17 +177,40 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard">
+      {/* Confirm Modal */}
       {toast && (
-        <div className="toast-container">
-          {toast.type === 'confirm' ? (
-            <div className="toast-confirm">
-              <span className="toast-text">{toast.message}</span>
-              <div className="toast-actions">
-                <button className="toast-btn-yes" onClick={handleToastConfirm}>Ya</button>
-                <button className="toast-btn-no" onClick={dismissToast}>Batal</button>
-              </div>
+        <div className="modal-overlay" onClick={dismissConfirm}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon">
+              {toast.isLogout ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+              )}
             </div>
-          ) : (<div className="toast"><span className="toast-text">{toast.message}</span></div>)}
+            <div className="modal-title">{toast.title}</div>
+            <div className="modal-desc">{toast.desc}</div>
+            <div className="modal-actions">
+              <button className="modal-btn-cancel" onClick={dismissConfirm}>Batal</button>
+              <button className={`modal-btn-confirm ${toast.isLogout ? 'logout-btn' : ''}`} onClick={handleConfirm}>
+                {toast.isLogout ? 'Ya, Keluar' : 'Ya, Hapus'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {successMsg && (
+        <div className="toast-success">
+          <span className="toast-success-icon">✓</span>
+          {successMsg}
         </div>
       )}
 

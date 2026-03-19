@@ -13,6 +13,7 @@ export default function ArchiveChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
@@ -21,13 +22,12 @@ export default function ArchiveChatPage() {
   const params = useParams();
   const archiveId = params.id;
 
-  function showToastConfirm(message, onConfirm) { setToast({ type: 'confirm', message, onConfirm }); }
-  function showToastInfo(message) {
-    setToast({ type: 'info', message });
-    setTimeout(() => setToast(null), 2000);
+  function showConfirm(title, desc, onConfirm) {
+    setToast({ title, desc, onConfirm });
   }
-  function dismissToast() { setToast(null); }
-  function handleToastConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
+  function dismissConfirm() { setToast(null); }
+  function handleConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
+  function showSuccess(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3000); }
 
   useEffect(() => {
     const decoded = getUserFromToken();
@@ -91,9 +91,10 @@ export default function ArchiveChatPage() {
   }
 
   function requestDeleteMessage(msgId) {
-    showToastConfirm('Hapus pesan ini?', async () => {
+    showConfirm('Hapus Pesan?', 'Pesan ini akan dihapus permanen.', async () => {
       await supabase.from('messages').delete().eq('id', msgId);
       fetchMessages();
+      showSuccess('Pesan berhasil dihapus');
     });
   }
 
@@ -134,7 +135,7 @@ export default function ArchiveChatPage() {
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
-    showToastInfo(`Exported sebagai ${format.toUpperCase()}`);
+    showSuccess(`Exported sebagai ${format.toUpperCase()}`);
   }
 
   function formatTime(d) {
@@ -176,22 +177,31 @@ export default function ArchiveChatPage() {
 
   return (
     <div className="chat-container">
-      {/* Toast */}
+      {/* Confirm Modal */}
       {toast && (
-        <div className="toast-container">
-          {toast.type === 'confirm' ? (
-            <div className="toast-confirm">
-              <span className="toast-text">{toast.message}</span>
-              <div className="toast-actions">
-                <button className="toast-btn-yes" onClick={handleToastConfirm}>Hapus</button>
-                <button className="toast-btn-no" onClick={dismissToast}>Batal</button>
-              </div>
+        <div className="modal-overlay" onClick={dismissConfirm}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              </svg>
             </div>
-          ) : (
-            <div className="toast">
-              <span className="toast-text">{toast.message}</span>
+            <div className="modal-title">{toast.title}</div>
+            <div className="modal-desc">{toast.desc}</div>
+            <div className="modal-actions">
+              <button className="modal-btn-cancel" onClick={dismissConfirm}>Batal</button>
+              <button className="modal-btn-confirm" onClick={handleConfirm}>Ya, Hapus</button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {successMsg && (
+        <div className="toast-success">
+          <span className="toast-success-icon">✓</span>
+          {successMsg}
         </div>
       )}
 
