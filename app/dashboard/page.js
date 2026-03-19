@@ -27,6 +27,9 @@ export default function DashboardPage() {
   const [successMsg, setSuccessMsg] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
+  // Sort editing
+  const [editingSortId, setEditingSortId] = useState(null);
+  const [sortInput, setSortInput] = useState('');
   // Info tab
   const [editingPayment, setEditingPayment] = useState(null);
   const [paymentInput, setPaymentInput] = useState('');
@@ -34,7 +37,6 @@ export default function DashboardPage() {
   const [recoveryInput, setRecoveryInput] = useState('');
   const router = useRouter();
 
-  // Modal confirm
   function showConfirm(title, desc, onConfirm, isLogout) {
     setToast({ title, desc, onConfirm, isLogout: !!isLogout });
   }
@@ -95,7 +97,6 @@ export default function DashboardPage() {
   async function addEmail(e) {
     e.preventDefault(); if (!newEmail.trim()) return;
     setCreating(true);
-    // Get max sort_order
     const maxOrder = emails.length > 0 ? Math.max(...emails.map(e => e.sort_order || 0)) : 0;
     await supabase.from('emails').insert({ email: newEmail.trim(), user_id: user.id, sort_order: maxOrder + 1 });
     setNewEmail(''); fetchEmails(); setCreating(false);
@@ -138,17 +139,20 @@ export default function DashboardPage() {
     showSuccess('Drive usage diperbarui');
   }
 
-  // Reorder email
-  async function moveEmail(index, direction) {
-    const list = [...filteredEmails];
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= list.length) return;
-
-    // Swap sort_order
-    const a = list[index];
-    const b = list[targetIndex];
-    await supabase.from('emails').update({ sort_order: b.sort_order }).eq('id', a.id);
-    await supabase.from('emails').update({ sort_order: a.sort_order }).eq('id', b.id);
+  // Sort by number: swap if duplicate
+  async function saveSortOrder(emailId, currentOrder) {
+    const newOrder = parseInt(sortInput);
+    if (isNaN(newOrder) || newOrder < 1 || newOrder === currentOrder) {
+      setEditingSortId(null); setSortInput(''); return;
+    }
+    // Find email that currently has this sort_order
+    const existing = emails.find(e => e.sort_order === newOrder && e.id !== emailId);
+    if (existing) {
+      // Swap: give the existing one the current order
+      await supabase.from('emails').update({ sort_order: currentOrder }).eq('id', existing.id);
+    }
+    await supabase.from('emails').update({ sort_order: newOrder }).eq('id', emailId);
+    setEditingSortId(null); setSortInput('');
     fetchEmails();
   }
 
@@ -396,10 +400,10 @@ export default function DashboardPage() {
             {/* Email Table */}
             <div className="email-table">
               <div className="email-table-header">
-                <span>#</span>
-                <span className="th-center">Email</span>
-                <span className="th-center">Pay</span>
+                <span className="th-center">#</span>
+                <span>Email</span>
                 <span className="th-center">Cadangkan</span>
+                <span className="th-center">Pay</span>
                 <span className="th-center">Tag</span>
                 <span className="th-center">Drive</span>
                 <span className="th-center">Action</span>
@@ -416,11 +420,23 @@ export default function DashboardPage() {
                 const dp = getDrivePercent(item.drive_usage);
                 const dc = getDriveColor(dp);
                 const tc = item.tags ? getTagColor(item.tag_id) : null;
-                const hasPay = !!(item.payment && item.payment.trim());
                 const hasRecovery = !!(item.recovery_email && item.recovery_email.trim());
+                const hasPay = !!(item.payment && item.payment.trim());
                 return (
                   <div key={item.id} className="email-row">
-                    <span className="email-num">{index + 1}</span>
+                    <div className="sort-num-cell">
+                      {editingSortId === item.id ? (
+                        <input type="number" className="sort-input" value={sortInput} min="1" autoFocus
+                          onChange={(e) => setSortInput(e.target.value)}
+                          onBlur={() => saveSortOrder(item.id, item.sort_order)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveSortOrder(item.id, item.sort_order); if (e.key === 'Escape') { setEditingSortId(null); setSortInput(''); } }}/>
+                      ) : (
+                        <span className="sort-num" onClick={() => { setEditingSortId(item.id); setSortInput(String(item.sort_order || index + 1)); }}
+                          title="Klik untuk ubah urutan">
+                          {item.sort_order || index + 1}
+                        </span>
+                      )}
+                    </div>
                     <div className="email-info">
                       <span className="email-address" onClick={() => copyEmail(item.email)} title="Klik untuk copy">
                         {item.email}
@@ -429,13 +445,13 @@ export default function DashboardPage() {
                       <div className="email-date">{formatDate(item.created_at)}</div>
                     </div>
                     <div className="status-cell">
-                      <span className={`status-badge ${hasPay ? 'yes' : 'no'}`}>
-                        {hasPay ? '✓' : '✗'}
+                      <span className={`status-badge ${hasRecovery ? 'yes' : 'no'}`}>
+                        {hasRecovery ? '✓' : '✗'}
                       </span>
                     </div>
                     <div className="status-cell">
-                      <span className={`status-badge ${hasRecovery ? 'yes' : 'no'}`}>
-                        {hasRecovery ? '✓' : '✗'}
+                      <span className={`status-badge ${hasPay ? 'yes' : 'no'}`}>
+                        {hasPay ? '✓' : '✗'}
                       </span>
                     </div>
                     <div className="email-tag-cell">
@@ -458,19 +474,6 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="email-actions">
-                      {/* Move */}
-                      <button className="action-btn" onClick={(e) => { e.stopPropagation(); moveEmail(index, -1); }}
-                        disabled={index === 0} title="Pindah ke atas">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="18 15 12 9 6 15"/>
-                        </svg>
-                      </button>
-                      <button className="action-btn" onClick={(e) => { e.stopPropagation(); moveEmail(index, 1); }}
-                        disabled={index === filteredEmails.length - 1} title="Pindah ke bawah">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                      </button>
                       {/* Tag */}
                       <div className="action-wrapper">
                         <button className={`action-btn ${assigningEmail === item.id ? 'tag-active' : ''}`}
@@ -547,10 +550,10 @@ export default function DashboardPage() {
 
             <div className="email-table">
               <div className="info-table-header">
-                <span>#</span>
+                <span className="th-center">#</span>
                 <span>Email</span>
-                <span className="th-center">Payment</span>
                 <span className="th-center">Email Pemulihan</span>
+                <span className="th-center">Payment</span>
               </div>
               {filteredEmails.length === 0 ? (
                 <div className="empty-state" style={{ padding: '40px 20px' }}>
@@ -558,27 +561,12 @@ export default function DashboardPage() {
                 </div>
               ) : filteredEmails.map((item, index) => (
                 <div key={item.id} className="info-row">
-                  <span className="email-num">{index + 1}</span>
+                  <span className="email-num">{item.sort_order || index + 1}</span>
                   <div className="email-info">
                     <span className="email-address" onClick={() => copyEmail(item.email)} title="Klik untuk copy">
                       {item.email}
                       {copiedId === item.email && <span className="copied-badge">✓</span>}
                     </span>
-                  </div>
-                  <div className="info-input-cell">
-                    {editingPayment === item.id ? (
-                      <div className="info-edit-row">
-                        <input type="text" className="info-input" value={paymentInput}
-                          onChange={(e) => setPaymentInput(e.target.value)} autoFocus placeholder="Isi payment..."
-                          onKeyDown={(e) => { if (e.key === 'Enter') savePayment(item.id); if (e.key === 'Escape') setEditingPayment(null); }}/>
-                        <button className="drive-save" onClick={() => savePayment(item.id)}>✓</button>
-                        <button className="info-cancel" onClick={() => setEditingPayment(null)}>✗</button>
-                      </div>
-                    ) : (
-                      <span className="info-value" onClick={() => { setEditingPayment(item.id); setPaymentInput(item.payment || ''); setEditingRecovery(null); }}>
-                        {item.payment && item.payment.trim() ? item.payment : <span className="info-empty">— Kosong</span>}
-                      </span>
-                    )}
                   </div>
                   <div className="info-input-cell">
                     {editingRecovery === item.id ? (
@@ -592,6 +580,21 @@ export default function DashboardPage() {
                     ) : (
                       <span className="info-value" onClick={() => { setEditingRecovery(item.id); setRecoveryInput(item.recovery_email || ''); setEditingPayment(null); }}>
                         {item.recovery_email && item.recovery_email.trim() ? item.recovery_email : <span className="info-empty">— Kosong</span>}
+                      </span>
+                    )}
+                  </div>
+                  <div className="info-input-cell">
+                    {editingPayment === item.id ? (
+                      <div className="info-edit-row">
+                        <input type="text" className="info-input" value={paymentInput}
+                          onChange={(e) => setPaymentInput(e.target.value)} autoFocus placeholder="Isi payment..."
+                          onKeyDown={(e) => { if (e.key === 'Enter') savePayment(item.id); if (e.key === 'Escape') setEditingPayment(null); }}/>
+                        <button className="drive-save" onClick={() => savePayment(item.id)}>✓</button>
+                        <button className="info-cancel" onClick={() => setEditingPayment(null)}>✗</button>
+                      </div>
+                    ) : (
+                      <span className="info-value" onClick={() => { setEditingPayment(item.id); setPaymentInput(item.payment || ''); setEditingRecovery(null); }}>
+                        {item.payment && item.payment.trim() ? item.payment : <span className="info-empty">— Kosong</span>}
                       </span>
                     )}
                   </div>

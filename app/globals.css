@@ -713,14 +713,14 @@ html, body {
 
 .email-table-header {
   display: grid;
-  grid-template-columns: 40px 1fr 70px 85px 120px 150px 260px;
+  grid-template-columns: 44px 1fr 80px 65px 120px 150px 200px;
   gap: 8px;
   padding: 10px 16px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(245,158,11,0.08) 0%, var(--bg-surface) 100%);
+  border-bottom: 2px solid var(--accent);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -729,7 +729,7 @@ html, body {
 
 .email-row {
   display: grid;
-  grid-template-columns: 40px 1fr 70px 85px 120px 150px 260px;
+  grid-template-columns: 44px 1fr 80px 65px 120px 150px 200px;
   gap: 8px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--border-light);
@@ -740,6 +740,40 @@ html, body {
 .email-row:hover { background: var(--bg-card-hover); }
 
 .email-tag-cell { text-align: center; }
+
+/* Sort Number */
+.sort-num-cell { text-align: center; }
+.sort-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid rgba(245,158,11,0.2);
+  cursor: pointer;
+  font-family: monospace;
+  transition: all 0.15s;
+}
+.sort-num:hover { background: var(--accent-bg-hover); border-color: var(--accent); }
+
+.sort-input {
+  width: 36px;
+  height: 30px;
+  text-align: center;
+  background: var(--bg-input);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: monospace;
+  outline: none;
+}
 
 /* Status Badges (Pay / Cadangkan) */
 .status-cell { text-align: center; }
@@ -939,21 +973,21 @@ html, body {
    ============================================ */
 .info-table-header {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 1fr;
+  grid-template-columns: 44px 1fr 1fr 1fr;
   gap: 12px;
   padding: 10px 16px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(245,158,11,0.08) 0%, var(--bg-surface) 100%);
+  border-bottom: 2px solid var(--accent);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .info-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 1fr;
+  grid-template-columns: 44px 1fr 1fr 1fr;
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-light);
@@ -1015,9 +1049,9 @@ html, body {
   .email-table { background: transparent; border: none; }
 
   .email-row {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
     padding: 16px;
     margin-bottom: 8px;
     background: var(--bg-card);
@@ -1027,25 +1061,28 @@ html, body {
   .email-row:hover { background: var(--bg-card-hover); }
   .email-row:last-child { border-bottom: 1px solid var(--border); margin-bottom: 0; }
 
-  .email-num { display: none; }
+  .sort-num-cell { grid-column: 1; text-align: left; }
+  .sort-num { width: 28px; height: 28px; font-size: 12px; }
+  .sort-input { width: 34px; height: 28px; font-size: 12px; }
 
-  .email-info { width: 100%; }
-  .email-address { font-size: 15px; white-space: normal; word-break: break-all; }
+  .email-info { grid-column: 1 / -1; }
+  .email-address { font-size: 14px; white-space: normal; word-break: break-all; }
 
-  .status-cell { text-align: left; }
-  .status-cell::before { font-size: 11px; color: var(--text-muted); margin-right: 6px; }
+  .status-cell { text-align: left; display: flex; align-items: center; gap: 6px; }
+  .status-cell::before { font-size: 10px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
+  .email-row .status-cell:nth-of-type(1)::before { content: 'Cadangkan'; }
+  .email-row .status-cell:nth-of-type(2)::before { content: 'Pay'; }
 
-  .email-tag-cell { text-align: left; }
+  .email-tag-cell { text-align: left; grid-column: 1 / -1; }
+  .drive-cell { grid-column: 1 / -1; }
 
-  .drive-cell { width: 100%; }
-
-  .email-actions { justify-content: flex-start; width: 100%; flex-wrap: wrap; }
-  .action-btn { width: 42px; height: 42px; }
+  .email-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .action-btn { width: 40px; height: 40px; }
 
   .info-row {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     padding: 16px;
     margin-bottom: 8px;
     background: var(--bg-card);
@@ -1055,6 +1092,7 @@ html, body {
   .info-row:last-child { border-bottom: 1px solid var(--border); margin-bottom: 0; }
   .info-row .email-num { display: none; }
   .info-input-cell { width: 100%; }
+  .info-value { padding: 8px 12px; background: var(--bg-hover); border-radius: var(--radius-sm); }
 }
 
 /* ============================================
