@@ -325,9 +325,9 @@ export default function DashboardPage() {
               <div className="email-table-header">
                 <span>#</span>
                 <span>Email</span>
-                <span>Tag</span>
+                <span className="th-tag">Tag</span>
                 <span>Drive</span>
-                <span></span>
+                <span className="th-action">Action</span>
               </div>
               {filteredEmails.length === 0 ? (
                 <div className="empty-state" style={{ padding: '40px 20px' }}>
@@ -365,14 +365,17 @@ export default function DashboardPage() {
                       <div className="drive-bar-mini">
                         <div className="drive-bar-mini-fill" style={{ width: `${dp}%`, backgroundColor: dc }}/>
                       </div>
-                      <span className="drive-label" style={{ color: dc }}>{formatGB(item.drive_usage)}/{'\u00A0'}15 GB</span>
+                      <div className="drive-labels">
+                        <span className="drive-label" style={{ color: dc }}>{formatGB(item.drive_usage)} / 15 GB</span>
+                        <span className="drive-percent" style={{ color: dc }}>{dp.toFixed(1)}%</span>
+                      </div>
                     </div>
                     <div className="email-actions">
                       {/* Tag */}
                       <div className="action-wrapper">
                         <button className={`action-btn ${assigningEmail === item.id ? 'tag-active' : ''}`}
                           onClick={(e) => { e.stopPropagation(); setAssigningEmail(assigningEmail === item.id ? null : item.id); setEditingDrive(null); }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
                             <line x1="7" y1="7" x2="7.01" y2="7"/>
                           </svg>
@@ -395,7 +398,7 @@ export default function DashboardPage() {
                         <button className={`action-btn ${editingDrive === item.id ? 'drive-active' : ''}`}
                           onClick={(e) => { e.stopPropagation(); setEditingDrive(editingDrive === item.id ? null : item.id);
                             setDriveInput(item.drive_usage ? formatGB(item.drive_usage) : ''); setAssigningEmail(null); }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                             <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
                           </svg>
