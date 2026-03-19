@@ -178,6 +178,7 @@ export default function DashboardPage() {
       {/* Top Nav */}
       <header className="dashboard-header">
         <div className="header-left">
+          <img src="/logo.svg" alt="ArsipMaR" width="34" height="34" style={{ borderRadius: 6 }}/>
           <h1 className="app-title">ArsipMaR</h1>
           <span className="user-email">{user?.email}</span>
         </div>
