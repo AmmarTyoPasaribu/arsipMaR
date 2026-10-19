@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getUserFromToken, removeToken } from '../../lib/auth';
 import { useRouter } from 'next/navigation';
+import ProjectsTab from './ProjectsTab';
 
 const TAG_COLORS = ['#f97316','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#f43f5e','#6366f1','#84cc16','#e879f9','#38bdf8'];
 
@@ -35,6 +36,10 @@ export default function DashboardPage() {
   const [paymentInput, setPaymentInput] = useState('');
   const [editingRecovery, setEditingRecovery] = useState(null);
   const [recoveryInput, setRecoveryInput] = useState('');
+  const successTimer = useRef(null);
+  const savingSort = useRef(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('order');
   const router = useRouter();
 
   function showConfirm(title, desc, onConfirm, isLogout) {
@@ -42,7 +47,11 @@ export default function DashboardPage() {
   }
   function dismissConfirm() { setToast(null); }
   function handleConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
-  function showSuccess(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3000); }
+  function showSuccess(msg) {
+    setSuccessMsg(msg);
+    clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setSuccessMsg(null), 3000);
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem('arsipmar-theme');
@@ -80,42 +89,55 @@ export default function DashboardPage() {
   async function createArchive(e) {
     e.preventDefault(); if (!newArchiveTitle.trim()) return;
     setCreating(true);
-    await supabase.from('archives').insert({ title: newArchiveTitle.trim(), user_id: user.id });
-    setNewArchiveTitle(''); fetchArchives(); setCreating(false);
+    const { error } = await supabase.from('archives').insert({ title: newArchiveTitle.trim(), user_id: user.id });
+    setCreating(false);
+    if (error) { showSuccess('Gagal membuat arsip'); return; }
+    setNewArchiveTitle(''); fetchArchives();
     showSuccess('Arsip berhasil dibuat');
   }
 
   function requestDeleteArchive(e, id) {
     e.stopPropagation();
     showConfirm('Hapus Arsip?', 'Arsip beserta semua pesannya akan dihapus permanen.', async () => {
-      await supabase.from('messages').delete().eq('archive_id', id);
-      await supabase.from('archives').delete().eq('id', id);
-      fetchArchives(); showSuccess('Arsip berhasil dihapus');
+      // messages are removed by ON DELETE CASCADE
+      const { error } = await supabase.from('archives').delete().eq('id', id).eq('user_id', user.id);
+      fetchArchives(); showSuccess(error ? 'Gagal menghapus arsip' : 'Arsip berhasil dihapus');
     });
   }
 
   async function addEmail(e) {
-    e.preventDefault(); if (!newEmail.trim()) return;
+    e.preventDefault();
+    const value = newEmail.trim().toLowerCase();
+    if (!value) return;
+    if (emails.some(x => x.email.toLowerCase() === value)) { showSuccess('Email sudah ada di daftar'); return; }
     setCreating(true);
     const maxOrder = emails.length > 0 ? Math.max(...emails.map(e => e.sort_order || 0)) : 0;
-    await supabase.from('emails').insert({ email: newEmail.trim(), user_id: user.id, sort_order: maxOrder + 1 });
-    setNewEmail(''); fetchEmails(); setCreating(false);
+    const { error } = await supabase.from('emails').insert({ email: value, user_id: user.id, sort_order: maxOrder + 1 });
+    setCreating(false);
+    if (error) { showSuccess('Gagal menambahkan email'); return; }
+    setNewEmail(''); fetchEmails();
     showSuccess('Email berhasil ditambahkan');
   }
 
   function requestDeleteEmail(e, id) {
     e.stopPropagation();
     showConfirm('Hapus Email?', 'Email ini akan dihapus permanen dari daftar.', async () => {
-      await supabase.from('emails').delete().eq('id', id);
-      fetchEmails(); showSuccess('Email berhasil dihapus');
+      const { error } = await supabase.from('emails').delete().eq('id', id).eq('user_id', user.id);
+      fetchEmails(); showSuccess(error ? 'Gagal menghapus email' : 'Email berhasil dihapus');
     });
   }
 
   async function createTag(e) {
-    e.preventDefault(); if (!newTag.trim()) return;
+    e.preventDefault();
+    const name = newTag.trim();
+    if (!name) return;
+    if (tags.some(t => t.name.toLowerCase() === name.toLowerCase())) { showSuccess('Tag sudah ada'); return; }
     setCreating(true);
-    await supabase.from('tags').insert({ name: newTag.trim(), user_id: user.id });
-    setNewTag(''); fetchTags(); setCreating(false);
+    const { error } = await supabase.from('tags').insert({ name, user_id: user.id });
+    setCreating(false);
+    if (error) { showSuccess('Gagal membuat tag'); return; }
+    setNewTag(''); fetchTags();
+    showSuccess('Tag berhasil dibuat');
   }
 
   function requestDeleteTag(e, id) {
@@ -141,10 +163,13 @@ export default function DashboardPage() {
 
   // Sort by number: swap if duplicate
   async function saveSortOrder(emailId, currentOrder) {
-    const newOrder = parseInt(sortInput);
+    // Enter and the resulting blur both call this; ignore the second call
+    if (savingSort.current) return;
+    const newOrder = parseInt(sortInput, 10);
     if (isNaN(newOrder) || newOrder < 1 || newOrder === currentOrder) {
       setEditingSortId(null); setSortInput(''); return;
     }
+    savingSort.current = true;
     // Find email that currently has this sort_order
     const existing = emails.find(e => e.sort_order === newOrder && e.id !== emailId);
     if (existing) {
@@ -153,7 +178,8 @@ export default function DashboardPage() {
     }
     await supabase.from('emails').update({ sort_order: newOrder }).eq('id', emailId);
     setEditingSortId(null); setSortInput('');
-    fetchEmails();
+    await fetchEmails();
+    savingSort.current = false;
   }
 
   // Info tab: update payment
@@ -174,7 +200,7 @@ export default function DashboardPage() {
     navigator.clipboard.writeText(emailText).then(() => {
       setCopiedId(emailText); showSuccess('Email berhasil disalin!');
       setTimeout(() => setCopiedId(null), 2000);
-    });
+    }).catch(() => showSuccess('Gagal menyalin email'));
   }
 
   function requestLogout() {
@@ -189,7 +215,9 @@ export default function DashboardPage() {
   function formatDate(d) { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); }
   function formatGB(v) { return (!v) ? '0' : v.toFixed(1).replace('.', ','); }
   function getDrivePercent(v) { return (!v) ? 0 : Math.min((v / 15) * 100, 100); }
-  function getDriveColor(p) { if (p >= 90) return '#ef4444'; if (p >= 70) return '#f59e0b'; if (p >= 50) return '#eab308'; return '#22c55e'; }
+  // GB thresholds: 12+ red, 11 to <12 orange, below that green
+  const DRIVE_RED_GB = 12, DRIVE_ORANGE_GB = 11;
+  function getDriveColor(gb) { if (gb >= DRIVE_RED_GB) return '#ef4444'; if (gb >= DRIVE_ORANGE_GB) return '#f97316'; return '#22c55e'; }
 
   const filteredArchives = searchQuery.trim()
     ? archives.filter(a => a.title.toLowerCase().includes(searchQuery.toLowerCase())) : archives;
@@ -200,8 +228,19 @@ export default function DashboardPage() {
       : emails.filter(e => e.tag_id === selectedTagFilter);
     if (searchQuery.trim() && (activeTab === 'email' || activeTab === 'info'))
       list = list.filter(e => e.email.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (statusFilter === 'norecovery') list = list.filter(e => !e.recovery_email?.trim());
+    else if (statusFilter === 'nopay') list = list.filter(e => !e.payment?.trim());
+    else if (statusFilter === 'full') list = list.filter(e => (e.drive_usage || 0) >= DRIVE_RED_GB);
+    if (sortBy === 'drive') list = [...list].sort((a, b) => (b.drive_usage || 0) - (a.drive_usage || 0));
+    else if (sortBy === 'az') list = [...list].sort((a, b) => a.email.localeCompare(b.email));
+    else if (sortBy === 'new') list = [...list].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     return list;
   })();
+
+  const totalDriveGB = emails.reduce((sum, e) => sum + (e.drive_usage || 0), 0);
+  const fullCount = emails.filter(e => (e.drive_usage || 0) >= DRIVE_RED_GB).length;
+  const noRecoveryCount = emails.filter(e => !e.recovery_email?.trim()).length;
+  const noPayCount = emails.filter(e => !e.payment?.trim()).length;
 
   if (loading) return <div className="loading-screen"><div className="spinner large"></div></div>;
 
@@ -301,6 +340,14 @@ export default function DashboardPage() {
           </svg>
           Info
         </button>
+        <button className={`tab-btn ${activeTab === 'proyek' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('proyek'); setSearchQuery(''); }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          Proyek
+        </button>
       </div>
 
       <main className="dashboard-content">
@@ -397,6 +444,38 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* Summary */}
+            {emails.length > 0 && (
+              <div className="stat-row">
+                <div className="stat-card"><span className="stat-value">{emails.length}</span><span className="stat-label">Total email</span></div>
+                <div className="stat-card"><span className="stat-value">{formatGB(totalDriveGB)} GB</span><span className="stat-label">Drive terpakai / {emails.length * 15} GB</span></div>
+                <div className={`stat-card ${fullCount > 0 ? 'stat-danger' : ''}`}><span className="stat-value">{fullCount}</span><span className="stat-label">Drive hampir penuh (≥12 GB)</span></div>
+              </div>
+            )}
+            {fullCount > 0 && (
+              <div className="warn-banner">
+                ⚠ {fullCount} email hampir penuh.
+                <button className="btn-link" onClick={() => setStatusFilter('full')}>Tampilkan</button>
+              </div>
+            )}
+
+            {/* Status filter + sort */}
+            <div className="filter-bar">
+              <div className="tag-filters">
+                {[['all', 'Semua'], ['norecovery', `Belum ada pemulihan (${noRecoveryCount})`],
+                  ['nopay', `Belum ada pay (${noPayCount})`], ['full', `Drive ≥ 12 GB (${fullCount})`]].map(([key, label]) => (
+                  <button key={key} className={`tag-pill ${statusFilter === key ? 'active' : ''}`}
+                    onClick={() => setStatusFilter(key)}>{label}</button>
+                ))}
+              </div>
+              <select className="sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="order">Urutan nomor</option>
+                <option value="drive">Drive terpenuh</option>
+                <option value="az">Email A–Z</option>
+                <option value="new">Terbaru</option>
+              </select>
+            </div>
+
             {/* Email Table */}
             <div className="email-table">
               <div className="email-table-header">
@@ -418,7 +497,7 @@ export default function DashboardPage() {
                 </div>
               ) : filteredEmails.map((item, index) => {
                 const dp = getDrivePercent(item.drive_usage);
-                const dc = getDriveColor(dp);
+                const dc = getDriveColor(item.drive_usage || 0);
                 const tc = item.tags ? getTagColor(item.tag_id) : null;
                 const hasRecovery = !!(item.recovery_email && item.recovery_email.trim());
                 const hasPay = !!(item.payment && item.payment.trim());
@@ -602,6 +681,11 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* PROYEK */}
+        {activeTab === 'proyek' && (
+          <ProjectsTab user={user} showSuccess={showSuccess} showConfirm={showConfirm} />
         )}
       </main>
     </div>

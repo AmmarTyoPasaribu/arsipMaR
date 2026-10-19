@@ -1,5 +1,5 @@
 import { supabase } from '../../../../lib/supabase';
-import { signToken } from '../../../../lib/auth';
+import { signToken } from '../../../../lib/jwt';
 import bcrypt from 'bcryptjs';
 import { NextResponse } from 'next/server';
 
@@ -7,32 +7,27 @@ export async function POST(request) {
   try {
     const { email, password } = await request.json();
 
-    if (!email || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
       return NextResponse.json({ error: 'Email dan password harus diisi' }, { status: 400 });
     }
 
-    // Find user
-    const { data: user, error } = await supabase
+    const { data: user } = await supabase
       .from('users')
-      .select('*')
+      .select('id, email, password_hash')
       .eq('email', email.toLowerCase().trim())
-      .single();
+      .maybeSingle();
 
-    if (error || !user) {
-      return NextResponse.json({ error: 'Email tidak ditemukan' }, { status: 401 });
-    }
-
-    // Verify password
-    const valid = await bcrypt.compare(password, user.password_hash);
+    // Same message for unknown email and wrong password (no account enumeration)
+    const valid = user ? await bcrypt.compare(password, user.password_hash) : false;
     if (!valid) {
-      return NextResponse.json({ error: 'Password salah' }, { status: 401 });
+      return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 });
     }
 
-    // Generate JWT
     const token = signToken({ id: user.id, email: user.email });
 
     return NextResponse.json({ token, user: { id: user.id, email: user.email } });
   } catch (err) {
-    return NextResponse.json({ error: 'Server error: ' + err.message }, { status: 500 });
+    console.error('login error:', err);
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
 }

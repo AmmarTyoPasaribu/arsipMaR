@@ -18,6 +18,7 @@ export default function ArchiveChatPage() {
   const messagesEndRef = useRef(null);
   const messagesAreaRef = useRef(null);
   const textareaRef = useRef(null);
+  const successTimer = useRef(null);
   const router = useRouter();
   const params = useParams();
   const archiveId = params.id;
@@ -27,7 +28,11 @@ export default function ArchiveChatPage() {
   }
   function dismissConfirm() { setToast(null); }
   function handleConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
-  function showSuccess(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3000); }
+  function showSuccess(msg) {
+    setSuccessMsg(msg);
+    clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setSuccessMsg(null), 3000);
+  }
 
   useEffect(() => {
     const decoded = getUserFromToken();
@@ -86,15 +91,24 @@ export default function ArchiveChatPage() {
     const { error } = await supabase.from('messages').insert({
       archive_id: archiveId, user_id: user.id, content: newMessage.trim(),
     });
-    if (!error) { setNewMessage(''); fetchMessages(); }
+    if (error) showSuccess('Gagal mengirim pesan');
+    else { setNewMessage(''); fetchMessages(); }
     setSending(false);
+  }
+
+  // Enter sends, Shift+Enter inserts a newline (skipped while an IME is composing)
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!sending) sendMessage();
+    }
   }
 
   function requestDeleteMessage(msgId) {
     showConfirm('Hapus Pesan?', 'Pesan ini akan dihapus permanen.', async () => {
-      await supabase.from('messages').delete().eq('id', msgId);
+      const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('user_id', user.id);
       fetchMessages();
-      showSuccess('Pesan berhasil dihapus');
+      showSuccess(error ? 'Gagal menghapus pesan' : 'Pesan berhasil dihapus');
     });
   }
 
@@ -103,6 +117,7 @@ export default function ArchiveChatPage() {
     if (!archive || messages.length === 0) return;
 
     let content, filename, type;
+    const safeTitle = archive.title.replace(/[\\/:*?"<>|]/g, '_').trim() || 'arsip';
 
     if (format === 'json') {
       content = JSON.stringify({
@@ -113,7 +128,7 @@ export default function ArchiveChatPage() {
           timestamp: m.created_at,
         })),
       }, null, 2);
-      filename = `${archive.title}.json`;
+      filename = `${safeTitle}.json`;
       type = 'application/json';
     } else {
       const lines = [`=== ${archive.title} ===`, `Exported: ${new Date().toLocaleString('id-ID')}`, `Total: ${messages.length} pesan`, ''];
@@ -126,7 +141,7 @@ export default function ArchiveChatPage() {
         lines.push(`[${time}] ${m.content}`);
       });
       content = lines.join('\n');
-      filename = `${archive.title}.txt`;
+      filename = `${safeTitle}.txt`;
       type = 'text/plain';
     }
 
@@ -157,10 +172,11 @@ export default function ArchiveChatPage() {
   }
 
   function renderTextWithLinks(text) {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const parts = text.split(urlRegex);
+    // split() with a capture group puts the URL matches at odd indexes.
+    // (Using a /g regex with .test() here is stateful and skipped every other link.)
+    const parts = text.split(/(https?:\/\/[^\s]+)/);
     return parts.map((part, i) => {
-      if (urlRegex.test(part)) {
+      if (i % 2 === 1) {
         return (
           <a key={i} href={part} target="_blank" rel="noopener noreferrer"
             style={{ color: '#93c5fd', textDecoration: 'underline', wordBreak: 'break-all' }}
@@ -285,6 +301,7 @@ export default function ArchiveChatPage() {
           placeholder="Ketik pesan..."
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
           className="chat-textarea"
           rows={1}
         />
