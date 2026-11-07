@@ -3,20 +3,24 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { parseInventory, detectPlatform, normalizeUrl } from '../../lib/parseInventory';
+import Icon from '../components/Icon';
+import { SearchInput } from './ArchivesTab';
 
 const SERVICE_LABELS = { supabase: 'Supabase', cloudinary: 'Cloudinary', render: 'Render' };
-const SERVICE_ICONS = { supabase: '⚡', cloudinary: '☁', render: '▲' };
+const IMPORT_PLACEHOLDER = '*Website*\nnama.vercel.app\n\n*Supabase*\nemail@gmail.com\nNamaProyek\n\n*Cloudinary*\nemail@gmail.com (catatan\n\n*Render*\nemail@gmail.com (Proyek)';
 
 // "mar.interview.vercel.app" -> "mar.interview"
 function siteName(url) {
   return url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/\.(vercel\.app|onrender\.com)$/, '');
 }
 
-export default function ProjectsTab({ user, showSuccess, showConfirm }) {
+export default function ProjectsTab({ user, notify, notifyError, confirm }) {
   const [websites, setWebsites] = useState([]);
   const [services, setServices] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [missingTables, setMissingTables] = useState(false);
+  const [search, setSearch] = useState('');
   const [newUrl, setNewUrl] = useState('');
   const [newSvcType, setNewSvcType] = useState('supabase');
   const [newSvcEmail, setNewSvcEmail] = useState('');
@@ -34,6 +38,7 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
       supabase.from('services').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
       supabase.from('service_projects').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
     ]);
+    setLoaded(true);
     // Tables not created yet (migration_inventory.sql not run)
     if (w.error || s.error || p.error) { setMissingTables(true); return; }
     setMissingTables(false);
@@ -44,18 +49,23 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
     e.preventDefault();
     if (!newUrl.trim()) return;
     const url = normalizeUrl(newUrl);
-    if (websites.some(w => w.url.toLowerCase() === url.toLowerCase())) { showSuccess('Website sudah ada'); return; }
+    if (websites.some(w => w.url.toLowerCase() === url.toLowerCase())) { notifyError('Website sudah ada'); return; }
     const { error } = await supabase.from('websites').insert({
-      user_id: user.id, url, name: url.replace(/^https?:\/\//, '').split('.')[0], platform: detectPlatform(url),
+      user_id: user.id, url, name: siteName(url), platform: detectPlatform(url),
     });
-    if (error) { showSuccess('Gagal menambah website'); return; }
-    setNewUrl(''); loadAll(); showSuccess('Website ditambahkan');
+    if (error) { notifyError('Gagal menambah website'); return; }
+    setNewUrl(''); loadAll(); notify('Website ditambahkan');
   }
 
-  function deleteWebsite(id) {
-    showConfirm('Hapus Website?', 'Website ini akan dihapus dari daftar.', async () => {
-      const { error } = await supabase.from('websites').delete().eq('id', id).eq('user_id', user.id);
-      loadAll(); showSuccess(error ? 'Gagal menghapus' : 'Website dihapus');
+  function deleteWebsite(w) {
+    confirm({
+      title: 'Hapus website?',
+      desc: `${siteName(w.url)} akan dihapus dari daftar.`,
+      onConfirm: async () => {
+        const { error } = await supabase.from('websites').delete().eq('id', w.id).eq('user_id', user.id);
+        if (error) { notifyError('Gagal menghapus'); return; }
+        loadAll(); notify('Website dihapus');
+      },
     });
   }
 
@@ -63,18 +73,23 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
     e.preventDefault();
     const email = newSvcEmail.trim().toLowerCase();
     if (!email) return;
-    if (services.some(s => s.type === newSvcType && s.account_email === email)) { showSuccess('Akun sudah ada'); return; }
+    if (services.some(s => s.type === newSvcType && s.account_email === email)) { notifyError('Akun sudah ada'); return; }
     const { error } = await supabase.from('services').insert({
       user_id: user.id, type: newSvcType, account_email: email, note: newSvcNote.trim(),
     });
-    if (error) { showSuccess('Gagal menambah akun'); return; }
-    setNewSvcEmail(''); setNewSvcNote(''); loadAll(); showSuccess('Akun ditambahkan');
+    if (error) { notifyError('Gagal menambah akun'); return; }
+    setNewSvcEmail(''); setNewSvcNote(''); loadAll(); notify('Akun ditambahkan');
   }
 
-  function deleteService(id) {
-    showConfirm('Hapus Akun?', 'Akun beserta daftar proyeknya akan dihapus.', async () => {
-      const { error } = await supabase.from('services').delete().eq('id', id).eq('user_id', user.id);
-      loadAll(); showSuccess(error ? 'Gagal menghapus' : 'Akun dihapus');
+  function deleteService(s) {
+    confirm({
+      title: 'Hapus akun?',
+      desc: `${s.account_email} (${SERVICE_LABELS[s.type]}) beserta daftar proyeknya akan dihapus.`,
+      onConfirm: async () => {
+        const { error } = await supabase.from('services').delete().eq('id', s.id).eq('user_id', user.id);
+        if (error) { notifyError('Gagal menghapus'); return; }
+        loadAll(); notify('Akun dihapus');
+      },
     });
   }
 
@@ -82,19 +97,20 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
     const name = (projectInputs[serviceId] || '').trim();
     if (!name) return;
     const { error } = await supabase.from('service_projects').insert({ user_id: user.id, service_id: serviceId, name });
-    if (error) { showSuccess('Gagal menambah proyek'); return; }
+    if (error) { notifyError('Gagal menambah proyek'); return; }
     setProjectInputs(p => ({ ...p, [serviceId]: '' })); loadAll();
   }
 
   async function deleteProject(id) {
-    await supabase.from('service_projects').delete().eq('id', id).eq('user_id', user.id);
+    const { error } = await supabase.from('service_projects').delete().eq('id', id).eq('user_id', user.id);
+    if (error) notifyError('Gagal menghapus proyek');
     loadAll();
   }
 
   async function runImport() {
     const parsed = parseInventory(importText);
     if (parsed.websites.length === 0 && parsed.services.length === 0) {
-      showSuccess('Tidak ada data yang dikenali'); return;
+      notifyError('Tidak ada data yang dikenali'); return;
     }
     setBusy(true);
     let addedSites = 0, addedAccounts = 0, addedProjects = 0;
@@ -106,14 +122,15 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
       if (!error) addedSites = newSites.length;
     }
 
+    const knownServices = [...services];
     for (const svc of parsed.services) {
-      let existing = services.find(s => s.type === svc.type && s.account_email === svc.account_email);
+      let existing = knownServices.find(s => s.type === svc.type && s.account_email === svc.account_email);
       if (!existing) {
         const { data, error } = await supabase.from('services')
           .insert({ user_id: user.id, type: svc.type, account_email: svc.account_email, note: svc.note })
           .select().single();
         if (error) continue;
-        existing = data; services.push(data); addedAccounts++;
+        existing = data; knownServices.push(data); addedAccounts++;
       }
       const have = new Set(projects.filter(p => p.service_id === existing.id).map(p => p.name.toLowerCase()));
       const fresh = svc.projects.filter(n => !have.has(n.toLowerCase()) && have.add(n.toLowerCase()));
@@ -125,121 +142,175 @@ export default function ProjectsTab({ user, showSuccess, showConfirm }) {
     }
 
     setBusy(false); setImportText(''); setShowImport(false); loadAll();
-    showSuccess(`Impor: ${addedSites} website, ${addedAccounts} akun, ${addedProjects} proyek`);
+    notify(`Diimpor: ${addedSites} website, ${addedAccounts} akun, ${addedProjects} proyek`);
   }
 
   function copy(text) {
-    navigator.clipboard.writeText(text).then(() => showSuccess('Disalin!')).catch(() => showSuccess('Gagal menyalin'));
+    navigator.clipboard.writeText(text).then(() => notify('Disalin')).catch(() => notifyError('Gagal menyalin'));
   }
 
-  if (missingTables) {
+  if (loaded && missingTables) {
     return (
-      <div className="section-content">
-        <div className="warn-banner">
-          Tabel inventaris belum dibuat. Jalankan <b>migration_inventory.sql</b> di Supabase SQL Editor, lalu muat ulang halaman.
+      <section className="page">
+        <div className="alert alert-warn">
+          <Icon name="alert" size={16} />
+          <span>Tabel inventaris belum dibuat. Jalankan <b>migration_inventory.sql</b> di Supabase SQL Editor, lalu muat ulang halaman.</span>
         </div>
-      </div>
+      </section>
     );
   }
 
+  const q = search.trim().toLowerCase();
+  const projectsOf = (serviceId) => projects.filter(p => p.service_id === serviceId);
+  const shownSites = q ? websites.filter(w => w.url.toLowerCase().includes(q)) : websites;
+  const shownServices = q
+    ? services.filter(s => s.account_email.includes(q) || s.note?.toLowerCase().includes(q)
+        || projectsOf(s.id).some(p => p.name.toLowerCase().includes(q)))
+    : services;
+
   return (
-    <div className="section-content">
-      <div className="inv-toolbar">
-        <div className="inv-stats">
-          <span className="inv-stat inv-stat-site"><b>{websites.length}</b> website</span>
-          <span className="inv-stat inv-stat-acc"><b>{services.length}</b> akun</span>
-          <span className="inv-stat inv-stat-proj"><b>{projects.length}</b> proyek</span>
+    <section className="page">
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Proyek</h1>
+          <p className="page-subtitle">
+            {loaded ? `${websites.length} website · ${services.length} akun layanan · ${projects.length} proyek` : 'Memuat…'}
+          </p>
         </div>
-        <button className="tag-pill" onClick={() => setShowImport(v => !v)}>
+        <button className={`btn ${showImport ? 'btn-secondary' : 'btn-outline'}`} onClick={() => setShowImport(v => !v)}>
+          <Icon name={showImport ? 'x' : 'upload'} size={15} />
           {showImport ? 'Tutup impor' : 'Impor dari teks'}
         </button>
       </div>
 
       {showImport && (
-        <div className="import-box">
-          <textarea className="import-textarea" rows={10} value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            placeholder={'*Website*\nnama.vercel.app\n\n*Supabase*\nemail@gmail.com\nNamaProyek\n\n*Cloudinary*\nemail@gmail.com (catatan\n\n*Render*\nemail@gmail.com (Proyek)'} />
-          <button className="btn-primary" onClick={runImport} disabled={busy || !importText.trim()}>
-            {busy ? <span className="spinner"></span> : 'Impor'}
-          </button>
+        <div className="panel import-panel">
+          <p className="panel-hint">
+            Tempel catatan dengan judul <code>*Website*</code>, <code>*Supabase*</code>, <code>*Cloudinary*</code>, atau <code>*Render*</code>.
+            Data yang sudah ada akan dilewati.
+          </p>
+          <textarea className="input textarea mono" rows={9} value={importText}
+            onChange={(e) => setImportText(e.target.value)} placeholder={IMPORT_PLACEHOLDER} aria-label="Teks untuk diimpor" />
+          <div className="panel-actions">
+            <button className="btn btn-primary" onClick={runImport} disabled={busy || !importText.trim()}>
+              {busy ? <span className="spinner small" /> : 'Impor'}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Websites */}
-      <h3 className="inv-heading"><span className="inv-dot inv-dot-site"></span>Website <span className="inv-count">{websites.length}</span></h3>
-      <form onSubmit={addWebsite} className="create-form">
-        <input type="text" placeholder="URL website, mis. margames.vercel.app" value={newUrl}
-          onChange={(e) => setNewUrl(e.target.value)} className="create-input" />
-        <button type="submit" className="btn-create">+</button>
-      </form>
-      <div className="inv-grid">
-        {websites.length === 0 ? (
-          <div className="empty-state"><p>Belum ada website</p></div>
-        ) : websites.map(w => (
-          <div key={w.id} className={`site-card site-${w.platform}`}>
-            <div className="site-avatar">{siteName(w.url).charAt(0).toUpperCase()}</div>
-            <div className="site-body">
-              <div className="site-name">{siteName(w.url)}</div>
-              <a href={w.url} target="_blank" rel="noopener noreferrer" className="site-url" title={w.url}>
-                {w.url.replace(/^https?:\/\//, '')}
-              </a>
-              <span className={`platform-badge platform-${w.platform}`}>{w.platform}</span>
-            </div>
-            <div className="site-actions">
-              <a href={w.url} target="_blank" rel="noopener noreferrer" className="site-open" title={w.url}>Buka ↗</a>
-              <button className="site-del" onClick={() => deleteWebsite(w.id)} title="Hapus">×</button>
-            </div>
+      {(websites.length > 0 || services.length > 0) && (
+        <div className="toolbar">
+          <SearchInput value={search} onChange={setSearch} placeholder="Cari website, email akun, atau proyek…" />
+        </div>
+      )}
+
+      {!loaded ? (
+        <div className="loading-block"><span className="spinner" /></div>
+      ) : (
+        <>
+          {/* Websites */}
+          <div className="section-head">
+            <h2 className="section-title">Website <span className="count-badge">{websites.length}</span></h2>
+            <form onSubmit={addWebsite} className="inline-form">
+              <input type="text" className="input" placeholder="mis. margames.vercel.app" value={newUrl}
+                onChange={(e) => setNewUrl(e.target.value)} aria-label="URL website baru" />
+              <button type="submit" className="btn btn-primary" disabled={!newUrl.trim()}>
+                <Icon name="plus" size={16} /> Tambah
+              </button>
+            </form>
           </div>
-        ))}
-      </div>
 
-      {/* Services */}
-      <h3 className="inv-heading"><span className="inv-dot inv-dot-svc"></span>Layanan <span className="inv-count">{services.length}</span></h3>
-      <form onSubmit={addService} className="create-form inv-service-form">
-        <select className="sort-select" value={newSvcType} onChange={(e) => setNewSvcType(e.target.value)}>
-          {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <input type="email" placeholder="Email akun..." value={newSvcEmail}
-          onChange={(e) => setNewSvcEmail(e.target.value)} className="create-input" />
-        <input type="text" placeholder="Catatan (opsional)" value={newSvcNote}
-          onChange={(e) => setNewSvcNote(e.target.value)} className="create-input" />
-        <button type="submit" className="btn-create">+</button>
-      </form>
-
-      {Object.keys(SERVICE_LABELS).map(type => {
-        const list = services.filter(s => s.type === type);
-        if (list.length === 0) return null;
-        return (
-          <div key={type} className="inv-group">
-            <div className={`inv-group-title svc-${type}`}><span className="svc-icon">{SERVICE_ICONS[type]}</span>{SERVICE_LABELS[type]}<span className="inv-count">{list.length}</span></div>
-            <div className="inv-grid">
-              {list.map(s => (
-                <div key={s.id} className={`inv-account svc-${type}`}>
-                  <div className="inv-account-head">
-                    <span className="email-address" onClick={() => copy(s.account_email)} title="Klik untuk copy">{s.account_email}</span>
-                    <button className="btn-delete" onClick={() => deleteService(s.id)} title="Hapus akun">×</button>
+          {shownSites.length === 0 ? (
+            <p className="muted-note">{q ? 'Tidak ada website yang cocok.' : 'Belum ada website.'}</p>
+          ) : (
+            <div className="grid-3">
+              {shownSites.map(w => (
+                <div key={w.id} className="site-card">
+                  <div className="site-avatar">{siteName(w.url).charAt(0).toUpperCase()}</div>
+                  <div className="site-body">
+                    <div className="site-name">{siteName(w.url)}</div>
+                    <a href={w.url} target="_blank" rel="noopener noreferrer" className="site-url" title={w.url}>
+                      {w.url.replace(/^https?:\/\//, '')}
+                    </a>
+                    <span className="badge">{w.platform}</span>
                   </div>
-                  {s.note && <div className="email-date">{s.note}</div>}
-                  <div className="inv-projects">
-                    {projects.filter(p => p.service_id === s.id).map(p => (
-                      <span key={p.id} className="inv-project">
-                        {p.name}
-                        <span className="tag-delete" onClick={() => deleteProject(p.id)}>×</span>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="inv-add-project">
-                    <input type="text" className="tag-input" placeholder="+ proyek" value={projectInputs[s.id] || ''}
-                      onChange={(e) => setProjectInputs(p => ({ ...p, [s.id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addProject(s.id); } }} />
+                  <div className="site-actions">
+                    <a href={w.url} target="_blank" rel="noopener noreferrer" className="btn btn-soft btn-sm" title={w.url}>
+                      Buka <Icon name="external" size={13} />
+                    </a>
+                    <button className="icon-btn icon-btn-danger reveal-on-hover" onClick={() => deleteWebsite(w)}
+                      aria-label={`Hapus ${siteName(w.url)}`} title="Hapus">
+                      <Icon name="trash" size={15} />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Services */}
+          <div className="section-head">
+            <h2 className="section-title">Layanan <span className="count-badge">{services.length}</span></h2>
+            <form onSubmit={addService} className="inline-form inline-form-wrap">
+              <select className="select" value={newSvcType} onChange={(e) => setNewSvcType(e.target.value)} aria-label="Jenis layanan">
+                {Object.entries(SERVICE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <input type="email" className="input" placeholder="Email akun" value={newSvcEmail}
+                onChange={(e) => setNewSvcEmail(e.target.value)} aria-label="Email akun" />
+              <input type="text" className="input" placeholder="Catatan (opsional)" value={newSvcNote}
+                onChange={(e) => setNewSvcNote(e.target.value)} aria-label="Catatan" />
+              <button type="submit" className="btn btn-primary" disabled={!newSvcEmail.trim()}>
+                <Icon name="plus" size={16} /> Tambah
+              </button>
+            </form>
           </div>
-        );
-      })}
-    </div>
+
+          {shownServices.length === 0 && (
+            <p className="muted-note">{q ? 'Tidak ada akun yang cocok.' : 'Belum ada akun layanan.'}</p>
+          )}
+
+          {Object.keys(SERVICE_LABELS).map(type => {
+            const list = shownServices.filter(s => s.type === type);
+            if (list.length === 0) return null;
+            return (
+              <div key={type} className={`svc-group svc-${type}`}>
+                <h3 className="svc-group-title"><span className="dot" />{SERVICE_LABELS[type]} <span className="count-badge">{list.length}</span></h3>
+                <div className="grid-3">
+                  {list.map(s => (
+                    <div key={s.id} className="account-card">
+                      <div className="account-head">
+                        <button className="email-address" onClick={() => copy(s.account_email)} title="Klik untuk menyalin">
+                          {s.account_email}
+                        </button>
+                        <button className="icon-btn icon-btn-danger reveal-on-hover" onClick={() => deleteService(s)}
+                          aria-label={`Hapus akun ${s.account_email}`} title="Hapus akun">
+                          <Icon name="trash" size={15} />
+                        </button>
+                      </div>
+                      {s.note && <div className="account-note">{s.note}</div>}
+                      <div className="project-chips">
+                        {projectsOf(s.id).map(p => (
+                          <span key={p.id} className="project-chip">
+                            {p.name}
+                            <button className="project-chip-remove" onClick={() => deleteProject(p.id)} aria-label={`Hapus proyek ${p.name}`}>
+                              <Icon name="x" size={10} strokeWidth={2.5} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <input type="text" className="input input-sm input-ghost" placeholder="+ Tambah proyek (Enter)"
+                        value={projectInputs[s.id] || ''} aria-label="Tambah proyek"
+                        onChange={(e) => setProjectInputs(p => ({ ...p, [s.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addProject(s.id); } }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </section>
   );
 }

@@ -1,134 +1,181 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { supabase } from '../../../lib/supabase';
 import { getUserFromToken } from '../../../lib/auth';
-import { useRouter, useParams } from 'next/navigation';
+import { useFeedback } from '../../components/Feedback';
+import Icon from '../../components/Icon';
+
+function formatTime(d) {
+  return new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateSep(d) {
+  const date = new Date(d);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Hari ini';
+  if (date.toDateString() === yesterday.toDateString()) return 'Kemarin';
+  return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function renderTextWithLinks(text) {
+  // split() with a capture group puts the URL matches at odd indexes
+  const parts = text.split(/(https?:\/\/[^\s]+)/);
+  return parts.map((part, i) => (i % 2 === 1
+    ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part}</a>
+    : part));
+}
 
 export default function ArchiveChatPage() {
   const [user, setUser] = useState(null);
   const [archive, setArchive] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState('');
   const messagesEndRef = useRef(null);
-  const messagesAreaRef = useRef(null);
   const textareaRef = useRef(null);
-  const successTimer = useRef(null);
+  // Only auto-scroll after the first load and after sending, not after edits/deletes
+  const scrollMode = useRef('initial');
   const router = useRouter();
   const params = useParams();
   const archiveId = params.id;
-
-  function showConfirm(title, desc, onConfirm) {
-    setToast({ title, desc, onConfirm });
-  }
-  function dismissConfirm() { setToast(null); }
-  function handleConfirm() { if (toast?.onConfirm) toast.onConfirm(); setToast(null); }
-  function showSuccess(msg) {
-    setSuccessMsg(msg);
-    clearTimeout(successTimer.current);
-    successTimer.current = setTimeout(() => setSuccessMsg(null), 3000);
-  }
+  const { notify, notifyError, confirm, ui } = useFeedback();
 
   useEffect(() => {
     const decoded = getUserFromToken();
-    if (!decoded) { router.push('/'); return; }
+    if (!decoded) { router.replace('/'); return; }
     setUser(decoded);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     if (user && archiveId) { fetchArchive(); fetchMessages(); }
   }, [user, archiveId]);
 
-  useEffect(() => { scrollToBottom(); }, [messages]);
-
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
-    }
-  }, [newMessage]);
-
-  // Scroll detection for scroll-to-bottom button
-  useEffect(() => {
-    const area = messagesAreaRef.current;
-    if (!area) return;
-    function handleScroll() {
-      const distFromBottom = area.scrollHeight - area.scrollTop - area.clientHeight;
-      setShowScrollBtn(distFromBottom > 200);
-    }
-    area.addEventListener('scroll', handleScroll);
-    return () => area.removeEventListener('scroll', handleScroll);
+    // wait for the first non-empty load, otherwise the initial scroll is spent on the empty list
+    if (!scrollMode.current || messages.length === 0) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: scrollMode.current === 'initial' ? 'auto' : 'smooth' });
+    scrollMode.current = null;
   }, [messages]);
 
-  function scrollToBottom() {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }
+  // Auto-grow the composer up to ~6 lines
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }, [newMessage]);
+
+  useEffect(() => {
+    function onScroll() {
+      const dist = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      setShowScrollBtn(dist > 300);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   async function fetchArchive() {
     const { data } = await supabase
-      .from('archives').select('*').eq('id', archiveId).eq('user_id', user.id).single();
-    if (!data) { router.push('/dashboard'); return; }
+      .from('archives').select('*').eq('id', archiveId).eq('user_id', user.id).maybeSingle();
+    if (!data) { router.replace('/dashboard'); return; }
     setArchive(data);
   }
 
   async function fetchMessages() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('messages').select('*').eq('archive_id', archiveId).eq('user_id', user.id)
       .order('created_at', { ascending: true });
+    if (error) notifyError('Gagal memuat pesan');
     setMessages(data || []);
+    setLoaded(true);
   }
 
   async function sendMessage(e) {
     e?.preventDefault();
-    if (!newMessage.trim()) return;
+    const content = newMessage.trim();
+    if (!content || sending) return;
     setSending(true);
-    const { error } = await supabase.from('messages').insert({
-      archive_id: archiveId, user_id: user.id, content: newMessage.trim(),
-    });
-    if (error) showSuccess('Gagal mengirim pesan');
-    else { setNewMessage(''); fetchMessages(); }
+    const { error } = await supabase.from('messages').insert({ archive_id: archiveId, user_id: user.id, content });
     setSending(false);
+    if (error) { notifyError('Gagal mengirim pesan'); return; }
+    setNewMessage('');
+    scrollMode.current = 'smooth';
+    fetchMessages();
+    textareaRef.current?.focus();
   }
 
   // Enter sends, Shift+Enter inserts a newline (skipped while an IME is composing)
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (!sending) sendMessage();
+      sendMessage();
     }
   }
 
+  async function saveTitle(e) {
+    e?.preventDefault();
+    const title = titleInput.trim();
+    setRenaming(false);
+    if (!title || title === archive.title) return;
+    const { error } = await supabase.from('archives').update({ title }).eq('id', archiveId).eq('user_id', user.id);
+    if (error) { notifyError('Gagal mengganti nama'); return; }
+    setArchive(a => ({ ...a, title }));
+    notify('Nama arsip diperbarui');
+  }
+
+  function startEdit(msg) {
+    setEditingId(msg.id);
+    setEditText(msg.content);
+  }
+
+  async function saveEdit(msgId) {
+    const content = editText.trim();
+    if (!content) return;
+    setEditingId(null);
+    const { error } = await supabase.from('messages').update({ content }).eq('id', msgId).eq('user_id', user.id);
+    if (error) { notifyError('Gagal menyimpan pesan'); return; }
+    setMessages(list => list.map(m => (m.id === msgId ? { ...m, content } : m)));
+    notify('Pesan diperbarui');
+  }
+
+  function copyMessage(text) {
+    navigator.clipboard.writeText(text).then(() => notify('Pesan disalin')).catch(() => notifyError('Gagal menyalin'));
+  }
+
   function requestDeleteMessage(msgId) {
-    showConfirm('Hapus Pesan?', 'Pesan ini akan dihapus permanen.', async () => {
-      const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('user_id', user.id);
-      fetchMessages();
-      showSuccess(error ? 'Gagal menghapus pesan' : 'Pesan berhasil dihapus');
+    confirm({
+      title: 'Hapus pesan?',
+      desc: 'Pesan ini akan dihapus permanen.',
+      onConfirm: async () => {
+        const { error } = await supabase.from('messages').delete().eq('id', msgId).eq('user_id', user.id);
+        if (error) { notifyError('Gagal menghapus pesan'); return; }
+        setMessages(list => list.filter(m => m.id !== msgId));
+        notify('Pesan dihapus');
+      },
     });
   }
 
-  // Export chat
   function exportChat(format) {
     if (!archive || messages.length === 0) return;
 
-    let content, filename, type;
+    let content, type;
     const safeTitle = archive.title.replace(/[\\/:*?"<>|]/g, '_').trim() || 'arsip';
 
     if (format === 'json') {
       content = JSON.stringify({
         archive: archive.title,
         exported_at: new Date().toISOString(),
-        messages: messages.map(m => ({
-          content: m.content,
-          timestamp: m.created_at,
-        })),
+        messages: messages.map(m => ({ content: m.content, timestamp: m.created_at })),
       }, null, 2);
-      filename = `${safeTitle}.json`;
       type = 'application/json';
     } else {
       const lines = [`=== ${archive.title} ===`, `Exported: ${new Date().toLocaleString('id-ID')}`, `Total: ${messages.length} pesan`, ''];
@@ -137,33 +184,18 @@ export default function ArchiveChatPage() {
         const date = new Date(m.created_at);
         const dateStr = date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
         if (dateStr !== lastDate) { lines.push(`--- ${dateStr} ---`); lastDate = dateStr; }
-        const time = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        lines.push(`[${time}] ${m.content}`);
+        lines.push(`[${formatTime(m.created_at)}] ${m.content}`);
       });
       content = lines.join('\n');
-      filename = `${safeTitle}.txt`;
       type = 'text/plain';
     }
 
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
+    a.href = url; a.download = `${safeTitle}.${format}`; a.click();
     URL.revokeObjectURL(url);
-    showSuccess(`Exported sebagai ${format.toUpperCase()}`);
-  }
-
-  function formatTime(d) {
-    return new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function formatDateSep(d) {
-    const date = new Date(d);
-    const today = new Date();
-    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
-    if (date.toDateString() === today.toDateString()) return 'Hari Ini';
-    if (date.toDateString() === yesterday.toDateString()) return 'Kemarin';
-    return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    notify(`Diekspor sebagai .${format}`);
   }
 
   function showDateSep(i) {
@@ -171,150 +203,129 @@ export default function ArchiveChatPage() {
     return new Date(messages[i - 1].created_at).toDateString() !== new Date(messages[i].created_at).toDateString();
   }
 
-  function renderTextWithLinks(text) {
-    // split() with a capture group puts the URL matches at odd indexes.
-    // (Using a /g regex with .test() here is stateful and skipped every other link.)
-    const parts = text.split(/(https?:\/\/[^\s]+)/);
-    return parts.map((part, i) => {
-      if (i % 2 === 1) {
-        return (
-          <a key={i} href={part} target="_blank" rel="noopener noreferrer"
-            style={{ color: '#93c5fd', textDecoration: 'underline', wordBreak: 'break-all' }}
-            onClick={(e) => e.stopPropagation()}>
-            {part}
-          </a>
-        );
-      }
-      return part;
-    });
-  }
-
-  if (loading) return <div className="loading-screen"><div className="spinner large"></div></div>;
+  if (!user) return <div className="loading-screen"><div className="spinner large" /></div>;
 
   return (
-    <div className="chat-container">
-      {/* Confirm Modal */}
-      {toast && (
-        <div className="modal-overlay" onClick={dismissConfirm}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-              </svg>
-            </div>
-            <div className="modal-title">{toast.title}</div>
-            <div className="modal-desc">{toast.desc}</div>
-            <div className="modal-actions">
-              <button className="modal-btn-cancel" onClick={dismissConfirm}>Batal</button>
-              <button className="modal-btn-confirm" onClick={handleConfirm}>Ya, Hapus</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Success Toast */}
-      {successMsg && (
-        <div className="toast-success">
-          <span className="toast-success-icon">✓</span>
-          {successMsg}
-        </div>
-      )}
+    <div className="chat-page">
+      {ui}
 
       <header className="chat-header">
-        <button onClick={() => router.push('/dashboard')} className="btn-back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-        </button>
-        <div className="chat-header-info">
-          <h2>{archive?.title || '...'}</h2>
-          <span className="message-count">{messages.length} pesan</span>
-        </div>
-        {/* Export Buttons */}
-        {messages.length > 0 && (
-          <div className="export-btns">
-            <button className="btn-export" onClick={() => exportChat('txt')} title="Export .txt">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              .txt
-            </button>
-            <button className="btn-export" onClick={() => exportChat('json')} title="Export .json">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              .json
-            </button>
+        <div className="chat-header-inner">
+          <button onClick={() => router.push('/dashboard')} className="icon-btn" aria-label="Kembali" title="Kembali">
+            <Icon name="back" size={18} strokeWidth={2.5} />
+          </button>
+
+          <div className="chat-title-wrap">
+            {renaming ? (
+              <form onSubmit={saveTitle} className="rename-form">
+                <input className="input input-sm" value={titleInput} autoFocus aria-label="Nama arsip"
+                  onChange={(e) => setTitleInput(e.target.value)} onBlur={saveTitle}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setRenaming(false); }} />
+              </form>
+            ) : (
+              <button className="chat-title" disabled={!archive} title="Ganti nama arsip"
+                onClick={() => { setTitleInput(archive.title); setRenaming(true); }}>
+                <span className="chat-title-text">{archive?.title || 'Memuat…'}</span>
+                <Icon name="edit" size={13} className="chat-title-icon" />
+              </button>
+            )}
+            <span className="chat-subtitle">{messages.length} pesan</span>
           </div>
-        )}
+
+          {messages.length > 0 && (
+            <div className="chat-header-actions">
+              <button className="btn btn-ghost btn-sm" onClick={() => exportChat('txt')} title="Ekspor sebagai .txt">
+                <Icon name="download" size={14} /> .txt
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportChat('json')} title="Ekspor sebagai .json">
+                <Icon name="download" size={14} /> .json
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
-      <div className="messages-area" ref={messagesAreaRef}>
-        {messages.length === 0 ? (
-          <div className="empty-chat">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-            </svg>
-            <p>Belum ada pesan. Mulai menulis!</p>
+      <main className="chat-main">
+        {!loaded ? (
+          <div className="loading-block"><span className="spinner" /></div>
+        ) : messages.length === 0 ? (
+          <div className="empty-state">
+            <Icon name="chat" size={44} strokeWidth={1.5} />
+            <p className="empty-title">Belum ada pesan</p>
+            <p className="empty-desc">Tulis catatan pertamamu di kolom bawah.</p>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={msg.id}>
-              {showDateSep(i) && <div className="date-separator"><span>{formatDateSep(msg.created_at)}</span></div>}
-              <div className="message-bubble">
-                <div className="message-content">
-                  <p>{renderTextWithLinks(msg.content)}</p>
-                  <div className="message-meta">
-                    <span className="message-time">{formatTime(msg.created_at)}</span>
-                    <button className="btn-delete-msg" onClick={() => requestDeleteMessage(msg.id)} title="Hapus">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+          <div className="note-list">
+            {messages.map((msg, i) => (
+              <div key={msg.id}>
+                {showDateSep(i) && <div className="date-sep"><span>{formatDateSep(msg.created_at)}</span></div>}
+                <article className={`note ${editingId === msg.id ? 'note-editing' : ''}`}>
+                  {editingId === msg.id ? (
+                    <div className="note-edit">
+                      <textarea className="input textarea" value={editText} autoFocus rows={Math.min(8, editText.split('\n').length + 1)}
+                        onChange={(e) => setEditText(e.target.value)} aria-label="Ubah pesan"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') setEditingId(null);
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveEdit(msg.id);
+                        }} />
+                      <div className="note-edit-actions">
+                        <span className="hint">Ctrl+Enter untuk simpan · Esc batal</span>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>Batal</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => saveEdit(msg.id)} disabled={!editText.trim()}>Simpan</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="note-text">{renderTextWithLinks(msg.content)}</p>
+                      <div className="note-footer">
+                        <time className="note-time" dateTime={msg.created_at}>{formatTime(msg.created_at)}</time>
+                        <div className="note-actions">
+                          <button className="icon-btn icon-btn-sm" onClick={() => copyMessage(msg.content)} aria-label="Salin" title="Salin">
+                            <Icon name="copy" size={13} />
+                          </button>
+                          <button className="icon-btn icon-btn-sm" onClick={() => startEdit(msg)} aria-label="Ubah" title="Ubah">
+                            <Icon name="edit" size={13} />
+                          </button>
+                          <button className="icon-btn icon-btn-sm icon-btn-danger" onClick={() => requestDeleteMessage(msg.id)}
+                            aria-label="Hapus" title="Hapus">
+                            <Icon name="trash" size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </article>
               </div>
-              {i === messages.length - 1 && <div ref={messagesEndRef} />}
-            </div>
-          ))
+            ))}
+            <div ref={messagesEndRef} className="scroll-anchor" />
+          </div>
         )}
-      </div>
+      </main>
 
-      {/* Scroll to Bottom */}
       {showScrollBtn && (
-        <button className="btn-scroll-bottom" onClick={scrollToBottom}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
+        <button className="scroll-bottom" onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+          aria-label="Ke pesan terbaru">
+          <Icon name="down" size={18} strokeWidth={2.5} />
         </button>
       )}
 
-      <form onSubmit={sendMessage} className="chat-input-bar">
-        <textarea
-          ref={textareaRef}
-          placeholder="Ketik pesan..."
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="chat-textarea"
-          rows={1}
-        />
-        <button type="submit" className="btn-send" disabled={sending || !newMessage.trim()}>
-          {sending ? (
-            <span className="spinner small"></span>
-          ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-          )}
-        </button>
+      <form onSubmit={sendMessage} className="composer">
+        <div className="composer-inner">
+          <textarea
+            ref={textareaRef}
+            placeholder="Tulis pesan…"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="composer-input"
+            rows={1}
+            aria-label="Tulis pesan"
+          />
+          <button type="submit" className="composer-send" disabled={sending || !newMessage.trim()} aria-label="Kirim">
+            {sending ? <span className="spinner small" /> : <Icon name="send" size={17} strokeWidth={2.2} />}
+          </button>
+        </div>
+        <p className="composer-hint">Enter untuk kirim · Shift+Enter baris baru</p>
       </form>
     </div>
   );
