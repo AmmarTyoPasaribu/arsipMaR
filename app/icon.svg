@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Brutal Permen: pink card, thick ink border, hard offset shadow -->
+  <rect x="5" y="5" width="41" height="41" rx="10" fill="#141414"/>
+  <rect x="1.5" y="1.5" width="41" height="41" rx="10" fill="#ff5fa8" stroke="#141414" stroke-width="3"/>
+  <rect x="8" y="8" width="17" height="7" rx="3.5" fill="#c4f56a" stroke="#141414" stroke-width="2"/>
+  <text x="22" y="34" text-anchor="middle" font-family="Rubik, 'Arial Black', Arial, sans-serif" font-size="15" font-weight="900" fill="#141414" letter-spacing="-0.6">MaR</text>
+</svg>

@@ -1,12 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="48" y2="48">
-      <stop offset="0%" stop-color="#f59e0b"/>
-      <stop offset="100%" stop-color="#d97706"/>
-    </linearGradient>
-  </defs>
-  <rect width="48" height="48" rx="10" fill="#18181b"/>
-  <rect x="2" y="2" width="44" height="44" rx="8" fill="none" stroke="url(#g)" stroke-width="2"/>
-  <text x="24" y="20" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" font-weight="600" fill="#a1a1aa" letter-spacing="1">ARSIP</text>
-  <text x="24" y="36" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="900" fill="url(#g)" letter-spacing="-0.5">MaR</text>
+  <!-- Brutal Permen: pink card, thick ink border, hard offset shadow -->
+  <rect x="5" y="5" width="41" height="41" rx="10" fill="#141414"/>
+  <rect x="1.5" y="1.5" width="41" height="41" rx="10" fill="#ff5fa8" stroke="#141414" stroke-width="3"/>
+  <rect x="8" y="8" width="17" height="7" rx="3.5" fill="#c4f56a" stroke="#141414" stroke-width="2"/>
+  <text x="22" y="34" text-anchor="middle" font-family="Rubik, 'Arial Black', Arial, sans-serif" font-size="15" font-weight="900" fill="#141414" letter-spacing="-0.6">MaR</text>
 </svg>
